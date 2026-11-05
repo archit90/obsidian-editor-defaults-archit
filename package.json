@@ -1,0 +1,18 @@
+{
+  "name": "obsidian-editor-defaults",
+  "version": "0.2.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.config.mjs",
+    "dev": "node esbuild.config.mjs watch",
+    "deploy": "node esbuild.config.mjs && cp manifest.json main.js \"${VAULT_PLUGIN_DIR:-/home/archit/obsidian/notes-vault/.obsidian/plugins/obsidian-editor-defaults}\"/"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.21.0",
+    "obsidian": "latest",
+    "tslib": "^2.6.0",
+    "typescript": "^5.4.0"
+  }
+}
