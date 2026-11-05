@@ -30,14 +30,29 @@ var DEFAULTS = {
   forceAttachments: true,
   attachmentFolder: "u",
   forceTrash: true,
-  forceCorePlugins: true
+  forceCorePlugins: true,
+  forceHotkeys: true
 };
 var CORE_PLUGINS = {
   bases: true,
   templates: false,
   // Templater replaces it
-  "zk-prefixer": false
+  "zk-prefixer": false,
   // "Unique note creator"
+  backlink: false
+  // Backlinks Full View's "All backlinks" pane replaces it
+};
+var HOTKEYS = {
+  "app:go-back": [
+    { modifiers: ["Mod", "Alt"], key: "ArrowLeft" },
+    // Obsidian's default
+    { modifiers: ["Mod"], key: "[" }
+  ],
+  "app:go-forward": [
+    { modifiers: ["Mod", "Alt"], key: "ArrowRight" },
+    // Obsidian's default
+    { modifiers: ["Mod"], key: "]" }
+  ]
 };
 var TRAILING_LINK = /\[\[([^\[\]|]+)\|([^\[\]]*)\]\]$/;
 var EditorDefaultsPlugin = class extends import_obsidian.Plugin {
@@ -71,6 +86,27 @@ var EditorDefaultsPlugin = class extends import_obsidian.Plugin {
     }
     if (s.forceTrash) this.setConfig("trashOption", "local");
     if (s.forceCorePlugins) await this.applyCorePlugins();
+    if (s.forceHotkeys) await this.applyHotkeys();
+  }
+  /** Sets each command in HOTKEYS to exactly its listed hotkeys (written to .obsidian/hotkeys.json). */
+  async applyHotkeys() {
+    var _a, _b;
+    const hm = this.app.hotkeyManager;
+    if (!hm || typeof hm.setHotkeys !== "function") return;
+    const norm = (ks) => JSON.stringify((ks != null ? ks : []).map((k) => ({ modifiers: [...k.modifiers].sort(), key: k.key.toLowerCase() })));
+    let changed = false;
+    for (const [id, keys] of Object.entries(HOTKEYS)) {
+      if (norm((_a = hm.getHotkeys) == null ? void 0 : _a.call(hm, id)) === norm(keys)) continue;
+      hm.setHotkeys(id, keys.map((k) => ({ modifiers: [...k.modifiers], key: k.key })));
+      changed = true;
+    }
+    if (changed) {
+      try {
+        await ((_b = hm.save) == null ? void 0 : _b.call(hm));
+      } catch (e) {
+        console.error("[editor-defaults] could not save hotkeys", e);
+      }
+    }
   }
   setConfig(key, value) {
     const vault = this.app.vault;
@@ -172,8 +208,13 @@ var EditorDefaultsTab = class extends import_obsidian.PluginSettingTab {
     );
     this.toggle(
       "Enforce core plugins",
-      "Keeps Bases on, and Templates and Unique note creator off.",
+      "Keeps Bases on, and Templates, Unique note creator and Backlinks off.",
       "forceCorePlugins"
+    );
+    this.toggle(
+      "Enforce hotkeys",
+      "Navigate back: Ctrl/Cmd+Alt+\u2190 and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+\u2192 and Ctrl/Cmd+].",
+      "forceHotkeys"
     );
   }
 };

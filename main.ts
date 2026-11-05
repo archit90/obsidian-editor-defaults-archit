@@ -7,6 +7,7 @@ interface Settings {
   attachmentFolder: string;
   forceTrash: boolean; // set "Deleted files" to "Move to Obsidian trash (.trash folder)"
   forceCorePlugins: boolean; // enable/disable the core plugins listed in CORE_PLUGINS
+  forceHotkeys: boolean; // set the hotkeys listed in HOTKEYS
 }
 const DEFAULTS: Settings = {
   forceRootPaths: true,
@@ -15,6 +16,7 @@ const DEFAULTS: Settings = {
   attachmentFolder: "u",
   forceTrash: true,
   forceCorePlugins: true,
+  forceHotkeys: true,
 };
 
 // core plugin id -> wanted state
@@ -22,6 +24,20 @@ const CORE_PLUGINS: Record<string, boolean> = {
   bases: true,
   templates: false, // Templater replaces it
   "zk-prefixer": false, // "Unique note creator"
+  backlink: false, // Backlinks Full View's "All backlinks" pane replaces it
+};
+
+// command id -> hotkeys it should have (replaces Obsidian's defaults for that command, so defaults are listed too)
+interface Hotkey { modifiers: string[]; key: string }
+const HOTKEYS: Record<string, Hotkey[]> = {
+  "app:go-back": [
+    { modifiers: ["Mod", "Alt"], key: "ArrowLeft" }, // Obsidian's default
+    { modifiers: ["Mod"], key: "[" },
+  ],
+  "app:go-forward": [
+    { modifiers: ["Mod", "Alt"], key: "ArrowRight" }, // Obsidian's default
+    { modifiers: ["Mod"], key: "]" },
+  ],
 };
 
 // [[target|alias]] sitting right before the cursor
@@ -63,6 +79,24 @@ export default class EditorDefaultsPlugin extends Plugin {
     // "local" == Obsidian trash (.trash), "system" == OS trash, "none" == delete permanently
     if (s.forceTrash) this.setConfig("trashOption", "local");
     if (s.forceCorePlugins) await this.applyCorePlugins();
+    if (s.forceHotkeys) await this.applyHotkeys();
+  }
+
+  /** Sets each command in HOTKEYS to exactly its listed hotkeys (written to .obsidian/hotkeys.json). */
+  private async applyHotkeys() {
+    const hm = (this.app as any).hotkeyManager;
+    if (!hm || typeof hm.setHotkeys !== "function") return;
+    const norm = (ks: Hotkey[] | undefined) =>
+      JSON.stringify((ks ?? []).map((k) => ({ modifiers: [...k.modifiers].sort(), key: k.key.toLowerCase() })));
+    let changed = false;
+    for (const [id, keys] of Object.entries(HOTKEYS)) {
+      if (norm(hm.getHotkeys?.(id)) === norm(keys)) continue; // custom keys only (defaults aren't included)
+      hm.setHotkeys(id, keys.map((k) => ({ modifiers: [...k.modifiers], key: k.key })));
+      changed = true;
+    }
+    if (changed) {
+      try { await hm.save?.(); } catch (e) { console.error("[editor-defaults] could not save hotkeys", e); }
+    }
   }
 
   private setConfig(key: string, value: unknown) {
@@ -175,8 +209,13 @@ class EditorDefaultsTab extends PluginSettingTab {
     );
     this.toggle(
       "Enforce core plugins",
-      "Keeps Bases on, and Templates and Unique note creator off.",
+      "Keeps Bases on, and Templates, Unique note creator and Backlinks off.",
       "forceCorePlugins"
+    );
+    this.toggle(
+      "Enforce hotkeys",
+      "Navigate back: Ctrl/Cmd+Alt+← and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+→ and Ctrl/Cmd+].",
+      "forceHotkeys"
     );
   }
 }
