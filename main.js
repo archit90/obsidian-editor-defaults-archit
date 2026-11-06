@@ -86,8 +86,10 @@ var HOTKEYS = {
     // Obsidian's default
     { modifiers: ["Mod"], key: "]" }
   ],
-  // Templater: "Open insert template modal" (replaces Templater's default Alt+E)
-  "templater-obsidian:insert-templater": [{ modifiers: ["Alt"], key: "N" }]
+  // Templater: Alt+N creates a new note from a template; "Open insert template modal" (which inserts into the
+  // open note) gets no hotkey, so an Alt+N saved on it earlier goes
+  "templater-obsidian:create-new-note-from-template": [{ modifiers: ["Alt"], key: "N" }],
+  "templater-obsidian:insert-templater": []
 };
 function sameHotkeys(a, b) {
   const norm = (ks) => JSON.stringify((ks ?? []).map((k) => ({ modifiers: [...k.modifiers].sort(), key: k.key.toLowerCase() })));
@@ -258,7 +260,7 @@ var EditorDefaultsTab = class extends import_obsidian2.PluginSettingTab {
     );
     this.toggle(
       "Enforce hotkeys",
-      "Navigate back: Ctrl/Cmd+Alt+\u2190 and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+\u2192 and Ctrl/Cmd+]. Templater, open insert template modal: Alt+N.",
+      "Navigate back: Ctrl/Cmd+Alt+\u2190 and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+\u2192 and Ctrl/Cmd+]. Templater, create new note from template: Alt+N (and no hotkey on its insert template modal).",
       "forceHotkeys"
     );
     this.toggle(

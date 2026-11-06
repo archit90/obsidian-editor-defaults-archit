@@ -86,7 +86,7 @@ export class EditorDefaultsTab extends PluginSettingTab {
     );
     this.toggle(
       "Enforce hotkeys",
-      "Navigate back: Ctrl/Cmd+Alt+← and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+→ and Ctrl/Cmd+]. Templater, open insert template modal: Alt+N.",
+      "Navigate back: Ctrl/Cmd+Alt+← and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+→ and Ctrl/Cmd+]. Templater, create new note from template: Alt+N (and no hotkey on its insert template modal).",
       "forceHotkeys",
     );
     this.toggle(

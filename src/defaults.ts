@@ -18,8 +18,10 @@ export const HOTKEYS: Record<string, Hotkey[]> = {
     { modifiers: ["Mod", "Alt"], key: "ArrowRight" }, // Obsidian's default
     { modifiers: ["Mod"], key: "]" },
   ],
-  // Templater: "Open insert template modal" (replaces Templater's default Alt+E)
-  "templater-obsidian:insert-templater": [{ modifiers: ["Alt"], key: "N" }],
+  // Templater: Alt+N creates a new note from a template; "Open insert template modal" (which inserts into the
+  // open note) gets no hotkey, so an Alt+N saved on it earlier goes
+  "templater-obsidian:create-new-note-from-template": [{ modifiers: ["Alt"], key: "N" }],
+  "templater-obsidian:insert-templater": [],
 };
 
 /** Whether two hotkey lists are the same, ignoring modifier order and key case. */

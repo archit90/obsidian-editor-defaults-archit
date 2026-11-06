@@ -25,3 +25,12 @@ describe("defaults", () => {
     expect(HOTKEYS["app:go-forward"]).toContainEqual({ modifiers: ["Mod", "Alt"], key: "ArrowRight" });
   });
 });
+
+describe("Templater hotkeys (tweak 53)", () => {
+  it("Alt+N creates a new note from a template; the insert modal has none", () => {
+    expect(HOTKEYS["templater-obsidian:create-new-note-from-template"]).toEqual([{ modifiers: ["Alt"], key: "N" }]);
+    expect(HOTKEYS["templater-obsidian:insert-templater"]).toEqual([]);
+    // an Alt+N saved on the insert modal earlier differs, so it gets cleared
+    expect(sameHotkeys([{ modifiers: ["Alt"], key: "N" }], HOTKEYS["templater-obsidian:insert-templater"])).toBe(false);
+  });
+});
