@@ -2,7 +2,7 @@
   "id": "obsidian-editor-defaults",
   "name": "Editor Defaults",
   "version": "0.1.0",
-  "minAppVersion": "1.4.4",
+  "minAppVersion": "1.15.0",
   "description": "Enforces vault defaults on every device: links use the full path from the vault root without a |alias, attachments go to one folder, deleted files go to the Obsidian trash, and core plugins are set.",
   "author": "Archit",
   "isDesktopOnly": false
