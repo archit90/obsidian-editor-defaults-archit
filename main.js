@@ -85,7 +85,9 @@ var HOTKEYS = {
     { modifiers: ["Mod", "Alt"], key: "ArrowRight" },
     // Obsidian's default
     { modifiers: ["Mod"], key: "]" }
-  ]
+  ],
+  // Templater: "Open insert template modal" (replaces Templater's default Alt+E)
+  "templater-obsidian:insert-templater": [{ modifiers: ["Alt"], key: "N" }]
 };
 function sameHotkeys(a, b) {
   const norm = (ks) => JSON.stringify((ks ?? []).map((k) => ({ modifiers: [...k.modifiers].sort(), key: k.key.toLowerCase() })));
@@ -256,7 +258,7 @@ var EditorDefaultsTab = class extends import_obsidian2.PluginSettingTab {
     );
     this.toggle(
       "Enforce hotkeys",
-      "Navigate back: Ctrl/Cmd+Alt+\u2190 and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+\u2192 and Ctrl/Cmd+].",
+      "Navigate back: Ctrl/Cmd+Alt+\u2190 and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+\u2192 and Ctrl/Cmd+]. Templater, open insert template modal: Alt+N.",
       "forceHotkeys"
     );
     this.toggle(

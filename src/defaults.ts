@@ -18,6 +18,8 @@ export const HOTKEYS: Record<string, Hotkey[]> = {
     { modifiers: ["Mod", "Alt"], key: "ArrowRight" }, // Obsidian's default
     { modifiers: ["Mod"], key: "]" },
   ],
+  // Templater: "Open insert template modal" (replaces Templater's default Alt+E)
+  "templater-obsidian:insert-templater": [{ modifiers: ["Alt"], key: "N" }],
 };
 
 /** Whether two hotkey lists are the same, ignoring modifier order and key case. */
