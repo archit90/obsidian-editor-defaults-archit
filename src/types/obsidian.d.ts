@@ -15,6 +15,15 @@ declare module "obsidian" {
       >;
     };
   }
+  interface App {
+    /** Property types and their widgets (Properties core plugin). */
+    metadataTypeManager?: {
+      registeredTypeWidgets: Record<
+        string,
+        { render(el: HTMLElement, value: unknown, ctx: unknown): { inputEl?: HTMLInputElement } | undefined }
+      >;
+    };
+  }
   interface Vault {
     getConfig?(key: string): unknown;
     setConfig?(key: string, value: unknown): void;

@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => EditorDefaultsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian2 = require("obsidian");
+var import_obsidian3 = require("obsidian");
 
 // ../node_modules/monkey-around/dist/index.mjs
 function around(obj, factories) {
@@ -99,8 +99,80 @@ function trailingAliasFix(before) {
   return m ? { from: m.index, text: `[[${m[1]}]]` } : null;
 }
 
-// src/settings.ts
+// src/properties.ts
 var import_obsidian = require("obsidian");
+var ISO_FIELDS = {
+  date: { placeholder: "YYYY-MM-DD", picker: "date" },
+  datetime: { placeholder: "YYYY-MM-DD HH:mm:ss", picker: "datetime-local" }
+};
+function pickedText(type, picked) {
+  if (type === "date") return picked.slice(0, 10);
+  const t = picked.slice(0, 19);
+  return shownDateTime(t.length === 16 ? `${t}:00` : t);
+}
+function shownDateTime(value) {
+  return value.replace(/^(\d{4}-\d{2}-\d{2})T/, "$1 ");
+}
+function isoDateTime(text) {
+  return text.trim().replace(/^(\d{4}-\d{2}-\d{2})\s+(?=\d)/, "$1T");
+}
+function pickerValue(type, text) {
+  const t = text.trim();
+  if (type === "date") return /^\d{4}-\d{2}-\d{2}/.test(t) ? t.slice(0, 10) : "";
+  const m = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2})?))?/.exec(t);
+  if (!m) return "";
+  const time = m[2] ?? "00:00:00";
+  return `${m[1]}T${time.length === 5 ? `${time}:00` : time}`;
+}
+function isoifyWidget(type, widget, el) {
+  const input = widget?.inputEl;
+  if (!widget || !input || input.dataset.isoDate) return;
+  input.dataset.isoDate = "1";
+  input.type = "text";
+  if (type === "datetime") {
+    input.value = shownDateTime(input.value);
+    const parse = widget.parse?.bind(widget);
+    if (parse) widget.parse = (text) => parse(isoDateTime(text));
+    const setValue = widget.setValue?.bind(widget);
+    if (setValue)
+      widget.setValue = (value) => {
+        setValue(value);
+        input.value = shownDateTime(input.value);
+      };
+  }
+  input.placeholder = ISO_FIELDS[type].placeholder;
+  input.spellcheck = false;
+  input.setAttr("inputmode", "numeric");
+  const button = el.createDiv({ cls: "clickable-icon iso-date-picker", attr: { "aria-label": "Pick a date" } });
+  (0, import_obsidian.setIcon)(button, "calendar");
+  const picker = el.createEl("input", {
+    cls: "iso-date-hidden-picker",
+    // step 1: the date & time picker offers seconds too
+    attr: { type: ISO_FIELDS[type].picker, step: "1", tabindex: "-1", "aria-hidden": "true" }
+  });
+  picker.setCssStyles({ position: "absolute", width: "1px", height: "1px", opacity: "0", pointerEvents: "none" });
+  el.addClass("iso-date-host");
+  button.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    picker.value = pickerValue(type, input.value);
+    try {
+      picker.showPicker();
+    } catch {
+      picker.focus();
+      picker.click();
+    }
+  });
+  picker.addEventListener("change", () => {
+    if (!picker.value) return;
+    input.value = pickedText(type, picker.value);
+    input.dispatchEvent(new Event("input"));
+    input.dispatchEvent(new Event("blur"));
+  });
+}
+
+// src/settings.ts
+var import_obsidian2 = require("obsidian");
 var DEFAULTS = {
   forceRootPaths: true,
   stripAlias: true,
@@ -108,15 +180,16 @@ var DEFAULTS = {
   attachmentFolder: "u",
   forceTrash: true,
   forceCorePlugins: true,
-  forceHotkeys: true
+  forceHotkeys: true,
+  isoDates: true
 };
-var EditorDefaultsTab = class extends import_obsidian.PluginSettingTab {
+var EditorDefaultsTab = class extends import_obsidian2.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
   toggle(name, desc, key) {
-    new import_obsidian.Setting(this.containerEl).setName(name).setDesc(desc).addToggle(
+    new import_obsidian2.Setting(this.containerEl).setName(name).setDesc(desc).addToggle(
       (t) => t.setValue(this.plugin.settings[key]).onChange(async (v) => {
         this.plugin.settings[key] = v;
         await this.plugin.saveSettings();
@@ -141,7 +214,7 @@ var EditorDefaultsTab = class extends import_obsidian.PluginSettingTab {
       'Keeps "Default location for new attachments" set to the folder below.',
       "forceAttachments"
     );
-    new import_obsidian.Setting(containerEl).setName("Attachment folder").setDesc("Path from the vault root.").addText(
+    new import_obsidian2.Setting(containerEl).setName("Attachment folder").setDesc("Path from the vault root.").addText(
       (t) => t.setValue(this.plugin.settings.attachmentFolder).onChange(async (v) => {
         this.plugin.settings.attachmentFolder = v;
         await this.plugin.saveSettings();
@@ -162,11 +235,16 @@ var EditorDefaultsTab = class extends import_obsidian.PluginSettingTab {
       "Navigate back: Ctrl/Cmd+Alt+\u2190 and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+\u2192 and Ctrl/Cmd+].",
       "forceHotkeys"
     );
+    this.toggle(
+      "Dates in properties as YYYY-MM-DD (date & time with seconds)",
+      "Date and Date & time properties show and take YYYY-MM-DD (date & time: YYYY-MM-DD HH:mm:ss) instead of your system's date format; the calendar button still opens a date picker. Reopen notes after changing this.",
+      "isoDates"
+    );
   }
 };
 
 // src/main.ts
-var EditorDefaultsPlugin = class extends import_obsidian2.Plugin {
+var EditorDefaultsPlugin = class extends import_obsidian3.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULTS };
@@ -177,6 +255,7 @@ var EditorDefaultsPlugin = class extends import_obsidian2.Plugin {
     this.app.workspace.onLayoutReady(() => {
       void this.applyDefaults();
       this.patchLinkSuggest();
+      this.patchDateWidgets();
     });
   }
   async saveSettings() {
@@ -232,6 +311,31 @@ var EditorDefaultsPlugin = class extends import_obsidian2.Plugin {
       } catch (e) {
         console.error(`[editor-defaults] could not ${want ? "enable" : "disable"} core plugin ${id}`, e);
       }
+    }
+  }
+  /** Date / Date & time property widgets: ISO text fields (see properties.ts). Undone on unload. */
+  patchDateWidgets() {
+    const widgets = this.app.metadataTypeManager?.registeredTypeWidgets;
+    if (!widgets) return;
+    const plugin = this;
+    for (const type of ["date", "datetime"]) {
+      const w = widgets[type];
+      if (typeof w?.render !== "function") continue;
+      this.register(
+        around(w, {
+          render: (next) => function(el, value, ctx) {
+            const widget = next.call(this, el, value, ctx);
+            if (plugin.settings.isoDates) {
+              try {
+                isoifyWidget(type, widget, el);
+              } catch (e) {
+                console.error("[editor-defaults] could not change the date field", e);
+              }
+            }
+            return widget;
+          }
+        })
+      );
     }
   }
   /** Wrap selectSuggestion on Obsidian's built-in [[ link suggester (undone on unload). */

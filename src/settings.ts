@@ -9,6 +9,7 @@ export interface Settings {
   forceTrash: boolean; // set "Deleted files" to "Move to Obsidian trash (.trash folder)"
   forceCorePlugins: boolean; // enable/disable the core plugins listed in CORE_PLUGINS
   forceHotkeys: boolean; // set the hotkeys listed in HOTKEYS
+  isoDates: boolean; // Date / Date & time properties as YYYY-MM-DD text, not the locale-formatted picker
 }
 
 export const DEFAULTS: Settings = {
@@ -19,6 +20,7 @@ export const DEFAULTS: Settings = {
   forceTrash: true,
   forceCorePlugins: true,
   forceHotkeys: true,
+  isoDates: true,
 };
 
 type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
@@ -85,6 +87,11 @@ export class EditorDefaultsTab extends PluginSettingTab {
       "Enforce hotkeys",
       "Navigate back: Ctrl/Cmd+Alt+← and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+→ and Ctrl/Cmd+].",
       "forceHotkeys",
+    );
+    this.toggle(
+      "Dates in properties as YYYY-MM-DD (date & time with seconds)",
+      "Date and Date & time properties show and take YYYY-MM-DD (date & time: YYYY-MM-DD HH:mm:ss) instead of your system's date format; the calendar button still opens a date picker. Reopen notes after changing this.",
+      "isoDates",
     );
   }
 }

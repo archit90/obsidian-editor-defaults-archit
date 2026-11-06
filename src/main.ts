@@ -2,6 +2,7 @@ import { Editor, EditorSuggest, Plugin } from "obsidian";
 import { around } from "monkey-around";
 import { CORE_PLUGINS, HOTKEYS, sameHotkeys } from "./defaults";
 import { trailingAliasFix } from "./links";
+import { IsoType, isoifyWidget } from "./properties";
 import { DEFAULTS, EditorDefaultsTab, Settings } from "./settings";
 
 /** What the [[ link suggester passes to selectSuggestion (only the fields used here). */
@@ -20,6 +21,7 @@ export default class EditorDefaultsPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       void this.applyDefaults();
       this.patchLinkSuggest();
+      this.patchDateWidgets();
     });
   }
 
@@ -82,6 +84,33 @@ export default class EditorDefaultsPlugin extends Plugin {
       } catch (e) {
         console.error(`[editor-defaults] could not ${want ? "enable" : "disable"} core plugin ${id}`, e);
       }
+    }
+  }
+
+  /** Date / Date & time property widgets: ISO text fields (see properties.ts). Undone on unload. */
+  private patchDateWidgets() {
+    const widgets = this.app.metadataTypeManager?.registeredTypeWidgets;
+    if (!widgets) return;
+    const plugin = this;
+    for (const type of ["date", "datetime"] as IsoType[]) {
+      const w = widgets[type];
+      if (typeof w?.render !== "function") continue;
+      this.register(
+        around(w, {
+          render: next =>
+            function (this: unknown, el: HTMLElement, value: unknown, ctx: unknown) {
+              const widget = next.call(this, el, value, ctx);
+              if (plugin.settings.isoDates) {
+                try {
+                  isoifyWidget(type, widget, el);
+                } catch (e) {
+                  console.error("[editor-defaults] could not change the date field", e);
+                }
+              }
+              return widget;
+            },
+        }),
+      );
     }
   }
 
