@@ -67,12 +67,13 @@ export class EditorDefaultsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Attachment folder")
       .setDesc("Path from the vault root.")
-      .addText(t =>
-        t.setValue(this.plugin.settings.attachmentFolder).onChange(async v => {
+      .addText(t => {
+        // applied when the field loses focus: a half-typed folder must not become the attachment folder
+        t.setValue(this.plugin.settings.attachmentFolder).onChange(v => {
           this.plugin.settings.attachmentFolder = v;
-          await this.plugin.saveSettings();
-        }),
-      );
+        });
+        t.inputEl.addEventListener("blur", () => void this.plugin.saveSettings());
+      });
     this.toggle(
       "Deleted files go to the Obsidian trash",
       'Keeps "Deleted files" set to "Move to Obsidian trash (.trash folder)".',

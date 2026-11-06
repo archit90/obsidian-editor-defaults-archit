@@ -94,9 +94,10 @@ function sameHotkeys(a, b) {
 
 // src/links.ts
 var TRAILING_LINK = /\[\[([^[\]|]+)\|([^[\]]*)\]\]$/;
-function trailingAliasFix(before) {
+function trailingAliasFix(before, only) {
   const m = TRAILING_LINK.exec(before);
-  return m ? { from: m.index, text: `[[${m[1]}]]` } : null;
+  if (!m || only !== void 0 && m[2] !== only) return null;
+  return { from: m.index, text: `[[${m[1]}]]` };
 }
 
 // src/properties.ts
@@ -124,15 +125,30 @@ function pickerValue(type, text) {
   const time = m[2] ?? "00:00:00";
   return `${m[1]}T${time.length === 5 ? `${time}:00` : time}`;
 }
+function isIsoText(type, text) {
+  const t = text.trim();
+  if (t === "") return true;
+  if (type === "date") return (0, import_obsidian.moment)(t, "YYYY-MM-DD", true).isValid();
+  return (0, import_obsidian.moment)(isoDateTime(t), ["YYYY-MM-DD[T]HH:mm:ss", "YYYY-MM-DD[T]HH:mm", "YYYY-MM-DD"], true).isValid();
+}
 function isoifyWidget(type, widget, el) {
   const input = widget?.inputEl;
   if (!widget || !input || input.dataset.isoDate) return;
   input.dataset.isoDate = "1";
+  if (type === "datetime" && /T\d{2}:\d{2}$/.test(input.value)) input.value += ":00";
   input.type = "text";
+  const parse = widget.parse?.bind(widget);
+  if (parse)
+    widget.parse = (text) => {
+      const ok = isIsoText(type, text);
+      input.toggleClass("is-invalid", !ok);
+      input.setAttr("aria-invalid", ok ? "false" : "true");
+      input.style.outline = ok ? "" : "1px solid var(--text-error)";
+      input.title = ok ? "" : `Use ${ISO_FIELDS[type].placeholder}`;
+      parse(ok ? type === "datetime" ? isoDateTime(text) : text : "not a date");
+    };
   if (type === "datetime") {
     input.value = shownDateTime(input.value);
-    const parse = widget.parse?.bind(widget);
-    if (parse) widget.parse = (text) => parse(isoDateTime(text));
     const setValue = widget.setValue?.bind(widget);
     if (setValue)
       widget.setValue = (value) => {
@@ -142,8 +158,10 @@ function isoifyWidget(type, widget, el) {
   }
   input.placeholder = ISO_FIELDS[type].placeholder;
   input.spellcheck = false;
-  input.setAttr("inputmode", "numeric");
-  const button = el.createDiv({ cls: "clickable-icon iso-date-picker", attr: { "aria-label": "Pick a date" } });
+  const button = el.createDiv({
+    cls: "clickable-icon iso-date-picker",
+    attr: { "aria-label": "Pick a date", role: "button", tabindex: "0" }
+  });
   (0, import_obsidian.setIcon)(button, "calendar");
   const picker = el.createEl("input", {
     cls: "iso-date-hidden-picker",
@@ -152,6 +170,12 @@ function isoifyWidget(type, widget, el) {
   });
   picker.setCssStyles({ position: "absolute", width: "1px", height: "1px", opacity: "0", pointerEvents: "none" });
   el.addClass("iso-date-host");
+  button.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      button.click();
+    }
+  });
   button.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -214,12 +238,12 @@ var EditorDefaultsTab = class extends import_obsidian2.PluginSettingTab {
       'Keeps "Default location for new attachments" set to the folder below.',
       "forceAttachments"
     );
-    new import_obsidian2.Setting(containerEl).setName("Attachment folder").setDesc("Path from the vault root.").addText(
-      (t) => t.setValue(this.plugin.settings.attachmentFolder).onChange(async (v) => {
+    new import_obsidian2.Setting(containerEl).setName("Attachment folder").setDesc("Path from the vault root.").addText((t) => {
+      t.setValue(this.plugin.settings.attachmentFolder).onChange((v) => {
         this.plugin.settings.attachmentFolder = v;
-        await this.plugin.saveSettings();
-      })
-    );
+      });
+      t.inputEl.addEventListener("blur", () => void this.plugin.saveSettings());
+    });
     this.toggle(
       "Deleted files go to the Obsidian trash",
       'Keeps "Deleted files" set to "Move to Obsidian trash (.trash folder)".',
@@ -350,9 +374,9 @@ var EditorDefaultsPlugin = class extends import_obsidian3.Plugin {
         around(suggest, {
           selectSuggestion: (next) => function(item, evt) {
             const editor = this.context?.editor;
-            const isFileLink = !!item?.file && ["file", "heading", "block", "linktext"].includes(item.type ?? "");
+            const name = item?.type === "file" ? item.file?.basename : void 0;
             const result = next.call(this, item, evt);
-            if (editor && isFileLink && plugin.settings.stripAlias) stripAliasBeforeCursor(editor);
+            if (editor && name && plugin.settings.stripAlias) stripAliasBeforeCursor(editor, name);
             return result;
           }
         })
@@ -360,9 +384,9 @@ var EditorDefaultsPlugin = class extends import_obsidian3.Plugin {
     }
   }
 };
-function stripAliasBeforeCursor(editor) {
+function stripAliasBeforeCursor(editor, name) {
   const cursor = editor.getCursor();
-  const fix = trailingAliasFix(editor.getLine(cursor.line).slice(0, cursor.ch));
+  const fix = trailingAliasFix(editor.getLine(cursor.line).slice(0, cursor.ch), name);
   if (!fix) return;
   editor.replaceRange(fix.text, { line: cursor.line, ch: fix.from }, cursor);
   editor.setCursor({ line: cursor.line, ch: fix.from + fix.text.length });

@@ -7,7 +7,7 @@
 // text field keeps Obsidian's own parsing and saving and shows the stored ISO value; a calendar button next to
 // it still opens the native picker (a hidden date input) for choosing a date with the mouse or on touch.
 
-import { setIcon } from "obsidian";
+import { moment, setIcon } from "obsidian";
 
 /** What the field shows and accepts, per property type. */
 export const ISO_FIELDS = {
@@ -43,6 +43,17 @@ export function pickerValue(type: IsoType, text: string): string {
   return `${m[1]}T${time.length === 5 ? `${time}:00` : time}`;
 }
 
+/**
+ * Whether text typed in the field is a complete ISO value. Obsidian's own parse is lenient (moment without
+ * strict mode reads `06/11/2026` as 2006-11-20 and `2026` as 2026-01-01), so anything else is refused.
+ */
+export function isIsoText(type: IsoType, text: string): boolean {
+  const t = text.trim();
+  if (t === "") return true; // clearing the field
+  if (type === "date") return moment(t, "YYYY-MM-DD", true).isValid();
+  return moment(isoDateTime(t), ["YYYY-MM-DD[T]HH:mm:ss", "YYYY-MM-DD[T]HH:mm", "YYYY-MM-DD"], true).isValid();
+}
+
 /** Make a rendered date / datetime property widget an ISO text field with a calendar button. */
 /** The parts of Obsidian's date / datetime property widget used here (app.js r5 and subclasses). */
 export interface DateWidget {
@@ -55,13 +66,24 @@ export function isoifyWidget(type: IsoType, widget: DateWidget | undefined, el: 
   const input = widget?.inputEl;
   if (!widget || !input || input.dataset.isoDate) return;
   input.dataset.isoDate = "1";
+  // the browser's datetime-local value leaves out zero seconds: put them back before it becomes text
+  if (type === "datetime" && /T\d{2}:\d{2}$/.test(input.value)) input.value += ":00";
   input.type = "text";
+  const parse = widget.parse?.bind(widget);
+  if (parse)
+    widget.parse = (text: string) => {
+      const ok = isIsoText(type, text);
+      // a value that isn't ISO is handed to Obsidian as something it can't parse, so it isn't saved
+      input.toggleClass("is-invalid", !ok);
+      input.setAttr("aria-invalid", ok ? "false" : "true");
+      input.style.outline = ok ? "" : "1px solid var(--text-error)";
+      input.title = ok ? "" : `Use ${ISO_FIELDS[type].placeholder}`;
+      parse(ok ? (type === "datetime" ? isoDateTime(text) : text) : "not a date");
+    };
   if (type === "datetime") {
     // Shown and typed as `YYYY-MM-DD HH:mm:ss`; Obsidian still parses ISO and saves `YYYY-MM-DDTHH:mm:ss` (what
     // Dataview, Bases and Obsidian itself expect), so the "T" only disappears from the field.
     input.value = shownDateTime(input.value);
-    const parse = widget.parse?.bind(widget);
-    if (parse) widget.parse = (text: string) => parse(isoDateTime(text));
     const setValue = widget.setValue?.bind(widget);
     if (setValue)
       widget.setValue = (value: string) => {
@@ -71,9 +93,12 @@ export function isoifyWidget(type: IsoType, widget: DateWidget | undefined, el: 
   }
   input.placeholder = ISO_FIELDS[type].placeholder;
   input.spellcheck = false;
-  input.setAttr("inputmode", "numeric");
+  // no inputmode="numeric": phone number pads have no "-" or ":"
 
-  const button = el.createDiv({ cls: "clickable-icon iso-date-picker", attr: { "aria-label": "Pick a date" } });
+  const button = el.createDiv({
+    cls: "clickable-icon iso-date-picker",
+    attr: { "aria-label": "Pick a date", role: "button", tabindex: "0" },
+  });
   setIcon(button, "calendar");
   const picker = el.createEl("input", {
     cls: "iso-date-hidden-picker",
@@ -83,6 +108,12 @@ export function isoifyWidget(type: IsoType, widget: DateWidget | undefined, el: 
   // rendered but invisible: showPicker() needs a rendered input, and opens next to it
   picker.setCssStyles({ position: "absolute", width: "1px", height: "1px", opacity: "0", pointerEvents: "none" });
   el.addClass("iso-date-host");
+  button.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      button.click();
+    }
+  });
   button.addEventListener("click", e => {
     e.preventDefault();
     e.stopPropagation();

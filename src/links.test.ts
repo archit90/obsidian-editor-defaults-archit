@@ -20,3 +20,12 @@ describe("trailingAliasFix", () => {
     expect(trailingAliasFix("[[a|A]] [[b|B]]")).toEqual({ from: 8, text: "[[b]]" });
   });
 });
+
+describe("trailingAliasFix with the note name (review ED-01)", () => {
+  it("strips the alias Obsidian added (the note's name)", () => {
+    expect(trailingAliasFix("see [[x/Bar|Bar]]", "Bar")).toEqual({ from: 4, text: "[[x/Bar]]" });
+  });
+  it("keeps an alias the user wrote", () => {
+    expect(trailingAliasFix("see [[x/Bar|my display]]", "Bar")).toBeNull();
+  });
+});

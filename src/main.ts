@@ -7,7 +7,7 @@ import { DEFAULTS, EditorDefaultsTab, Settings } from "./settings";
 
 /** What the [[ link suggester passes to selectSuggestion (only the fields used here). */
 interface LinkSuggestion {
-  file?: unknown;
+  file?: { basename?: string };
   type?: string;
 }
 type LinkSuggest = EditorSuggest<LinkSuggestion> & { __editorDefaultsPatched?: boolean };
@@ -127,9 +127,11 @@ export default class EditorDefaultsPlugin extends Plugin {
           selectSuggestion: next =>
             function (this: LinkSuggest, item: LinkSuggestion, evt: MouseEvent | KeyboardEvent) {
               const editor = this.context?.editor;
-              const isFileLink = !!item?.file && ["file", "heading", "block", "linktext"].includes(item.type ?? "");
+              // Obsidian only adds an alias itself to a note pick ("file"), and then it's the note's name. An
+              // alias already in the link (`[[old|my words]]`, retargeted) is kept by Obsidian: keep it too.
+              const name = item?.type === "file" ? item.file?.basename : undefined;
               const result = next.call(this, item, evt);
-              if (editor && isFileLink && plugin.settings.stripAlias) stripAliasBeforeCursor(editor);
+              if (editor && name && plugin.settings.stripAlias) stripAliasBeforeCursor(editor, name);
               return result;
             },
         }),
@@ -138,9 +140,9 @@ export default class EditorDefaultsPlugin extends Plugin {
   }
 }
 
-function stripAliasBeforeCursor(editor: Editor) {
+function stripAliasBeforeCursor(editor: Editor, name: string) {
   const cursor = editor.getCursor();
-  const fix = trailingAliasFix(editor.getLine(cursor.line).slice(0, cursor.ch));
+  const fix = trailingAliasFix(editor.getLine(cursor.line).slice(0, cursor.ch), name);
   if (!fix) return;
   editor.replaceRange(fix.text, { line: cursor.line, ch: fix.from }, cursor);
   editor.setCursor({ line: cursor.line, ch: fix.from + fix.text.length });
