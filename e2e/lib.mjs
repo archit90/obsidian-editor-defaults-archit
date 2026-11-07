@@ -102,10 +102,11 @@ const PAGE = String.raw`
 export async function setup(port = 9312) {
   const c = await connect(port);
   await c.ev(PAGE);
-  c.ev2 = (body) => c.ev(`(async()=>{const E=window.__ed; ${body}})()`);
+  c.ev2 = body => c.ev(`(async()=>{const E=window.__ed; ${body}})()`);
   c.click = async (x, y) => {
     await c.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
-    for (const type of ["mousePressed", "mouseReleased"]) await c.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
+    for (const type of ["mousePressed", "mouseReleased"])
+      await c.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
   };
   return c;
 }

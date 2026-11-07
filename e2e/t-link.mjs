@@ -1,6 +1,6 @@
 import { setup, sleep } from "./lib.mjs";
 const c = await setup();
-for (const s of (process.argv[2]||"tab,lanes,canvas-text,canvas-file").split(",")) {
+for (const s of (process.argv[2] || "tab,lanes,canvas-text,canvas-file").split(",")) {
   const info = await c.ev2(`return await E.open(${JSON.stringify(s)}, "see ")`);
   await c.type("[[");
   await c.type("Abstraction delays tru");
