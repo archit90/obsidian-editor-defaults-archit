@@ -7,7 +7,7 @@
 // text field keeps Obsidian's own parsing and saving and shows the stored ISO value; a calendar button next to
 // it still opens the native picker (a hidden date input) for choosing a date with the mouse or on touch.
 
-import { moment, setIcon } from "obsidian";
+import { moment, Notice, setIcon } from "obsidian";
 
 /** What the field shows and accepts, per property type. */
 export const ISO_FIELDS = {
@@ -54,21 +54,53 @@ export function isIsoText(type: IsoType, text: string): boolean {
   return moment(isoDateTime(t), ["YYYY-MM-DD[T]HH:mm:ss", "YYYY-MM-DD[T]HH:mm", "YYYY-MM-DD"], true).isValid();
 }
 
-/** Make a rendered date / datetime property widget an ISO text field with a calendar button. */
+/**
+ * What a valid field shows once its value is saved: the date, or the date & time with a space and seconds
+ * (`2026-11-07T10:00` -> `2026-11-07 10:00:00`), so the field matches what the note now holds. Anything that
+ * isn't a complete ISO value comes back unchanged.
+ */
+export function canonicalText(type: IsoType, text: string): string {
+  const t = text.trim();
+  if (t === "" || !isIsoText(type, t)) return text;
+  if (type === "date") return t;
+  const m = moment(isoDateTime(t), ["YYYY-MM-DD[T]HH:mm:ss", "YYYY-MM-DD[T]HH:mm", "YYYY-MM-DD"], true);
+  return m.format("YYYY-MM-DD HH:mm:ss");
+}
+
+/**
+ * The notice shown when a field is left with text that isn't a date: what was typed, the format, and the value
+ * the field went back to.
+ */
+export function invalidDateNotice(type: IsoType, typed: string, stored: string): string {
+  const back =
+    stored.trim() === "" ? "empty" : `"${type === "datetime" ? canonicalText(type, shownDateTime(stored)) : stored}"`;
+  return `"${typed.trim()}" isn't a valid ${type === "datetime" ? "date & time" : "date"} (use ${
+    ISO_FIELDS[type].placeholder
+  }), so it wasn't saved. The field is back to ${back}.`;
+}
+
 /** The parts of Obsidian's date / datetime property widget used here (app.js r5 and subclasses). */
 export interface DateWidget {
   inputEl?: HTMLInputElement;
+  /** The stored value (what the note holds). */
+  value?: string;
   parse?(text: string): void;
   setValue?(value: string): void;
 }
 
+/** Make a rendered date / datetime property widget an ISO text field with a calendar button. */
 export function isoifyWidget(type: IsoType, widget: DateWidget | undefined, el: HTMLElement) {
   const input = widget?.inputEl;
   if (!widget || !input || input.dataset.isoDate) return;
   input.dataset.isoDate = "1";
-  // the browser's datetime-local value leaves out zero seconds: put them back before it becomes text
-  if (type === "datetime" && /T\d{2}:\d{2}$/.test(input.value)) input.value += ":00";
+  // Date & times are shown and typed as `YYYY-MM-DD HH:mm:ss`; Obsidian still parses ISO and saves
+  // `YYYY-MM-DDTHH:mm:ss` (what Dataview, Bases and Obsidian itself expect), so the "T" only disappears from the
+  // field. The browser's datetime-local value leaves out zero seconds (`…T09:30` for `…T09:30:00`), and adding
+  // them back while the input is still datetime-local is undone at once (review ED-03): they are added to the text.
+  const shown = (v: string) => (type === "datetime" ? canonicalText(type, shownDateTime(v)) : v);
+  const value = input.value;
   input.type = "text";
+  input.value = shown(value);
   const parse = widget.parse?.bind(widget);
   if (parse)
     widget.parse = (text: string) => {
@@ -81,16 +113,30 @@ export function isoifyWidget(type: IsoType, widget: DateWidget | undefined, el: 
       parse(ok ? (type === "datetime" ? isoDateTime(text) : text) : "not a date");
     };
   if (type === "datetime") {
-    // Shown and typed as `YYYY-MM-DD HH:mm:ss`; Obsidian still parses ISO and saves `YYYY-MM-DDTHH:mm:ss` (what
-    // Dataview, Bases and Obsidian itself expect), so the "T" only disappears from the field.
-    input.value = shownDateTime(input.value);
     const setValue = widget.setValue?.bind(widget);
     if (setValue)
       widget.setValue = (value: string) => {
         setValue(value);
-        input.value = shownDateTime(input.value);
+        input.value = shown(input.value);
       };
   }
+  // Obsidian saves on blur (its listener was added first, so it has run): show the value as it is now stored.
+  // Text that isn't a date wasn't saved: the field goes back to the stored value, with a notice saying so.
+  input.addEventListener("blur", () => {
+    if (input.getAttr("aria-invalid") === "true") {
+      const typed = input.value;
+      const stored = widget.value ?? "";
+      if (widget.setValue) widget.setValue(stored);
+      else {
+        input.value = shown(stored);
+        widget.parse?.(input.value);
+      }
+      new Notice(invalidDateNotice(type, typed, stored));
+      return;
+    }
+    const text = canonicalText(type, input.value);
+    if (text !== input.value) input.value = text;
+  });
   input.placeholder = ISO_FIELDS[type].placeholder;
   input.spellcheck = false;
   // no inputmode="numeric": phone number pads have no "-" or ":"

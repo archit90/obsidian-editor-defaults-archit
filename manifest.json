@@ -3,7 +3,7 @@
   "name": "Editor Defaults",
   "version": "0.1.0",
   "minAppVersion": "1.15.0",
-  "description": "Enforces vault defaults on every device: links use the full path from the vault root without a |alias, attachments go to one folder, deleted files go to the Obsidian trash, and core plugins are set.",
+  "description": "Enforces vault defaults on every device, on load and whenever they drift: links use the full path from the vault root without a |alias, attachments go to one folder, deleted files go to the Obsidian trash, core plugins and hotkeys are set, and date properties show as YYYY-MM-DD.",
   "author": "Archit",
   "isDesktopOnly": false
 }

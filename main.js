@@ -95,13 +95,102 @@ function sameHotkeys(a, b) {
   const norm = (ks) => JSON.stringify((ks ?? []).map((k) => ({ modifiers: [...k.modifiers].sort(), key: k.key.toLowerCase() })));
   return norm(a) === norm(b);
 }
+var ARROWS = { arrowleft: "\u2190", arrowright: "\u2192", arrowup: "\u2191", arrowdown: "\u2193" };
+function comboKey(k, isMac) {
+  const mods = new Set(k.modifiers.map((m) => m === "Mod" ? isMac ? "Meta" : "Ctrl" : m));
+  return [...["Ctrl", "Meta", "Alt", "Shift"].filter((m) => mods.has(m)), k.key.toLowerCase()].join("+");
+}
+function hotkeyLabel(k, isMac) {
+  return comboKey(k, isMac).split("+").map((p, i, all) => {
+    if (i < all.length - 1) return p === "Meta" ? isMac ? "Cmd" : "Win" : isMac && p === "Alt" ? "Option" : p;
+    return ARROWS[p] ?? (p.length === 1 ? p.toUpperCase() : p);
+  }).join("+");
+}
+function hotkeyClashes(effective, isMac) {
+  const out = [];
+  for (const [command, keys] of Object.entries(HOTKEYS))
+    for (const k of keys) {
+      const want = comboKey(k, isMac);
+      for (const [other, theirs] of Object.entries(effective)) {
+        if (other in HOTKEYS) continue;
+        if (theirs.some((t) => comboKey(t, isMac) === want)) out.push({ command, other, label: hotkeyLabel(k, isMac) });
+      }
+    }
+  return out;
+}
+
+// src/drift.ts
+var ENFORCED_CONFIG = /* @__PURE__ */ new Set(["newLinkFormat", "attachmentFolderPath", "trashOption"]);
+var DriftGuard = class {
+  constructor(max = 5, windowMs = 1e4) {
+    this.max = max;
+    this.windowMs = windowMs;
+    this.times = /* @__PURE__ */ new Map();
+    this.warned = /* @__PURE__ */ new Set();
+  }
+  /** Whether item `id` may be put back again at `now`. */
+  allow(id, now) {
+    const recent = (this.times.get(id) ?? []).filter((t) => now - t < this.windowMs);
+    this.times.set(id, recent);
+    if (recent.length < this.max) return true;
+    if (!this.warned.has(id)) {
+      this.warned.add(id);
+      console.warn(`[editor-defaults] ${id} keeps changing back; not enforcing it again for now`);
+    }
+    return false;
+  }
+  record(id, now) {
+    this.times.set(id, [...this.times.get(id) ?? [], now]);
+  }
+};
+function list(items) {
+  return items.length < 2 ? items[0] ?? "" : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+function revertNotice(whats, settingNames) {
+  const names = [...new Set(settingNames)].map((n) => `"${n}"`);
+  return `Editor Defaults put back ${list(whats)}.
+To change ${whats.length > 1 ? "these" : "this"}, first turn off ${list(names)} in Editor Defaults' settings.`;
+}
 
 // src/links.ts
-var TRAILING_LINK = /\[\[([^[\]|]+)\|([^[\]]*)\]\]$/;
-function trailingAliasFix(before, only) {
-  const m = TRAILING_LINK.exec(before);
-  if (!m || only !== void 0 && m[2] !== only) return null;
-  return { from: m.index, text: `[[${m[1]}]]` };
+var WIKILINK = /\[\[([^[\]|]*)(?:\|([^[\]]*))?\]\]/g;
+function linkAt(line, ch) {
+  for (const m of line.matchAll(WIKILINK)) {
+    const from = m.index;
+    const to = from + m[0].length;
+    if (ch <= from || ch > to) continue;
+    const target = m[1] ?? "";
+    const hash = target.indexOf("#");
+    return {
+      from,
+      to,
+      path: hash < 0 ? target : target.slice(0, hash),
+      subpath: hash < 0 ? "" : target.slice(hash),
+      alias: m[2]
+    };
+  }
+  return null;
+}
+function fixPickedLink(line, ch, fix) {
+  const l = linkAt(line, ch);
+  if (!l) return null;
+  const alias = fix.dropAlias !== void 0 && l.alias === fix.dropAlias ? void 0 : l.alias;
+  const path = fix.path ?? l.path;
+  if (alias === l.alias && path === l.path) return null;
+  const text = `[[${path}${l.subpath}${alias !== void 0 ? `|${alias}` : ""}]]`;
+  const oldPathEnd = 2 + l.path.length;
+  const oldTargetEnd = oldPathEnd + l.subpath.length;
+  const oldAliasEnd = oldTargetEnd + (l.alias !== void 0 ? 1 + l.alias.length : 0);
+  const newPathEnd = 2 + path.length;
+  const newTargetEnd = newPathEnd + l.subpath.length;
+  const newAliasEnd = newTargetEnd + (alias !== void 0 ? 1 + alias.length : 0);
+  const off = ch - l.from;
+  let at;
+  if (off <= oldPathEnd) at = off === oldPathEnd ? newPathEnd : Math.min(off, newPathEnd);
+  else if (off <= oldTargetEnd) at = off - oldPathEnd + newPathEnd;
+  else if (off <= oldAliasEnd) at = alias !== void 0 ? off - oldTargetEnd + newTargetEnd : newTargetEnd;
+  else at = off - oldAliasEnd + newAliasEnd;
+  return { from: l.from, to: l.to, text, ch: l.from + at };
 }
 
 // src/properties.ts
@@ -135,12 +224,25 @@ function isIsoText(type, text) {
   if (type === "date") return (0, import_obsidian.moment)(t, "YYYY-MM-DD", true).isValid();
   return (0, import_obsidian.moment)(isoDateTime(t), ["YYYY-MM-DD[T]HH:mm:ss", "YYYY-MM-DD[T]HH:mm", "YYYY-MM-DD"], true).isValid();
 }
+function canonicalText(type, text) {
+  const t = text.trim();
+  if (t === "" || !isIsoText(type, t)) return text;
+  if (type === "date") return t;
+  const m = (0, import_obsidian.moment)(isoDateTime(t), ["YYYY-MM-DD[T]HH:mm:ss", "YYYY-MM-DD[T]HH:mm", "YYYY-MM-DD"], true);
+  return m.format("YYYY-MM-DD HH:mm:ss");
+}
+function invalidDateNotice(type, typed, stored) {
+  const back = stored.trim() === "" ? "empty" : `"${type === "datetime" ? canonicalText(type, shownDateTime(stored)) : stored}"`;
+  return `"${typed.trim()}" isn't a valid ${type === "datetime" ? "date & time" : "date"} (use ${ISO_FIELDS[type].placeholder}), so it wasn't saved. The field is back to ${back}.`;
+}
 function isoifyWidget(type, widget, el) {
   const input = widget?.inputEl;
   if (!widget || !input || input.dataset.isoDate) return;
   input.dataset.isoDate = "1";
-  if (type === "datetime" && /T\d{2}:\d{2}$/.test(input.value)) input.value += ":00";
+  const shown = (v) => type === "datetime" ? canonicalText(type, shownDateTime(v)) : v;
+  const value = input.value;
   input.type = "text";
+  input.value = shown(value);
   const parse = widget.parse?.bind(widget);
   if (parse)
     widget.parse = (text) => {
@@ -152,14 +254,28 @@ function isoifyWidget(type, widget, el) {
       parse(ok ? type === "datetime" ? isoDateTime(text) : text : "not a date");
     };
   if (type === "datetime") {
-    input.value = shownDateTime(input.value);
     const setValue = widget.setValue?.bind(widget);
     if (setValue)
-      widget.setValue = (value) => {
-        setValue(value);
-        input.value = shownDateTime(input.value);
+      widget.setValue = (value2) => {
+        setValue(value2);
+        input.value = shown(input.value);
       };
   }
+  input.addEventListener("blur", () => {
+    if (input.getAttr("aria-invalid") === "true") {
+      const typed = input.value;
+      const stored = widget.value ?? "";
+      if (widget.setValue) widget.setValue(stored);
+      else {
+        input.value = shown(stored);
+        widget.parse?.(input.value);
+      }
+      new import_obsidian.Notice(invalidDateNotice(type, typed, stored));
+      return;
+    }
+    const text = canonicalText(type, input.value);
+    if (text !== input.value) input.value = text;
+  });
   input.placeholder = ISO_FIELDS[type].placeholder;
   input.spellcheck = false;
   const button = el.createDiv({
@@ -211,142 +327,310 @@ var DEFAULTS = {
   forceHotkeys: true,
   isoDates: true
 };
+var SETTING_NAMES = {
+  forceRootPaths: "New links use path from vault root",
+  stripAlias: "Insert [[path]] without alias",
+  forceAttachments: "Keep attachments in one folder",
+  attachmentFolder: "Attachment folder",
+  forceTrash: "Deleted files go to the Obsidian trash",
+  forceCorePlugins: "Enforce core plugins",
+  forceHotkeys: "Enforce hotkeys",
+  isoDates: "Dates in properties as YYYY-MM-DD (date & time with seconds)"
+};
+var BOOL_KEYS = [
+  "forceRootPaths",
+  "stripAlias",
+  "forceAttachments",
+  "forceTrash",
+  "forceCorePlugins",
+  "forceHotkeys",
+  "isoDates"
+];
+function parseSettings(raw) {
+  const out = { ...DEFAULTS };
+  if (typeof raw !== "object" || raw === null) return out;
+  const get = (key) => Object.hasOwn(raw, key) ? Reflect.get(raw, key) : void 0;
+  for (const key of BOOL_KEYS) {
+    const v = get(key);
+    if (typeof v === "boolean") out[key] = v;
+  }
+  const folder = get("attachmentFolder");
+  if (typeof folder === "string") out.attachmentFolder = folder;
+  return out;
+}
 var EditorDefaultsTab = class extends import_obsidian2.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
-  toggle(name, desc, key) {
-    new import_obsidian2.Setting(this.containerEl).setName(name).setDesc(desc).addToggle(
+  toggle(desc, key) {
+    new import_obsidian2.Setting(this.containerEl).setName(SETTING_NAMES[key]).setDesc(desc).addToggle(
       (t) => t.setValue(this.plugin.settings[key]).onChange(async (v) => {
         this.plugin.settings[key] = v;
-        await this.plugin.saveSettings();
+        if (key === "isoDates") await this.plugin.isoDatesChanged();
+        else await this.plugin.saveSettings();
       })
     );
   }
   display() {
     const { containerEl } = this;
     containerEl.empty();
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text: "While one of these is on, Editor Defaults puts its value back whenever it changes: in Obsidian's settings, from another device, or by another plugin. Turn it off here to change that value yourself."
+    });
     this.toggle(
-      "New links use path from vault root",
-      'Keeps "New link format" set to "Absolute path in vault".',
+      'Keeps "New link format" set to "Absolute path in vault". Heading and block links picked from the [[ dropdown get the full path too.',
       "forceRootPaths"
     );
     this.toggle(
-      "Insert [[path]] without alias",
-      "Picking a note from the [[ dropdown inserts only the link target, not [[path|name]]. Works with absolute and relative link formats.",
+      "Picking a note from the [[ dropdown inserts only the link target, not [[path|name]]. Works with absolute and relative link formats, in notes and in properties.",
       "stripAlias"
     );
-    this.toggle(
-      "Keep attachments in one folder",
-      'Keeps "Default location for new attachments" set to the folder below.',
-      "forceAttachments"
-    );
-    new import_obsidian2.Setting(containerEl).setName("Attachment folder").setDesc("Path from the vault root.").addText((t) => {
+    this.toggle('Keeps "Default location for new attachments" set to the folder below.', "forceAttachments");
+    new import_obsidian2.Setting(containerEl).setName(SETTING_NAMES.attachmentFolder).setDesc("Path from the vault root.").addText((t) => {
       t.setValue(this.plugin.settings.attachmentFolder).onChange((v) => {
         this.plugin.settings.attachmentFolder = v;
       });
       t.inputEl.addEventListener("blur", () => void this.plugin.saveSettings());
     });
+    this.toggle('Keeps "Deleted files" set to "Move to Obsidian trash (.trash folder)".', "forceTrash");
+    this.toggle("Keeps Bases on, and Templates, Unique note creator and Backlinks off.", "forceCorePlugins");
     this.toggle(
-      "Deleted files go to the Obsidian trash",
-      'Keeps "Deleted files" set to "Move to Obsidian trash (.trash folder)".',
-      "forceTrash"
-    );
-    this.toggle(
-      "Enforce core plugins",
-      "Keeps Bases on, and Templates, Unique note creator and Backlinks off.",
-      "forceCorePlugins"
-    );
-    this.toggle(
-      "Enforce hotkeys",
       "Navigate back: Ctrl/Cmd+Alt+\u2190 and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+\u2192 and Ctrl/Cmd+]. Templater, create new note from template: Alt+N (and no hotkey on its insert template modal).",
       "forceHotkeys"
     );
     this.toggle(
-      "Dates in properties as YYYY-MM-DD (date & time with seconds)",
-      "Date and Date & time properties show and take YYYY-MM-DD (date & time: YYYY-MM-DD HH:mm:ss) instead of your system's date format; the calendar button still opens a date picker. Reopen notes after changing this.",
+      "Date and Date & time properties show and take YYYY-MM-DD (date & time: YYYY-MM-DD HH:mm:ss) instead of your system's date format; the calendar button still opens a date picker.",
       "isoDates"
     );
   }
 };
 
 // src/main.ts
+function linkSuggestion(item) {
+  if (typeof item !== "object" || item === null) return {};
+  return {
+    file: "file" in item && item.file instanceof import_obsidian3.TFile ? item.file : void 0,
+    type: "type" in item && typeof item.type === "string" ? item.type : void 0
+  };
+}
+function isPropertyLinkSuggestProto(proto) {
+  return typeof proto === "object" && proto !== null && Object.hasOwn(proto, "selectSuggestion") && Object.hasOwn(proto, "getLinktextQuery") && "selectSuggestion" in proto && typeof proto.selectSuggestion === "function";
+}
+var DRIFT_DELAY_MS = 300;
 var EditorDefaultsPlugin = class extends import_obsidian3.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULTS };
+    this.applying = false;
+    this.driftTimer = null;
+    this.guard = new DriftGuard();
+    /** Hotkey clashes already warned about this session ("other command|hotkey"). */
+    this.warnedClashes = /* @__PURE__ */ new Set();
   }
   async onload() {
-    this.settings = Object.assign({}, DEFAULTS, await this.loadData());
+    this.settings = parseSettings(await this.loadData());
     this.addSettingTab(new EditorDefaultsTab(this.app, this));
     this.app.workspace.onLayoutReady(() => {
-      void this.applyDefaults();
+      void this.applyDefaults().then(() => this.warnHotkeyClashes());
+      this.watchDrift();
       this.patchLinkSuggest();
+      this.patchPropertyLinkSuggest();
       this.patchDateWidgets();
+      if (this.settings.isoDates) this.rerenderDateFields();
     });
+  }
+  onunload() {
+    if (this.driftTimer !== null) window.clearTimeout(this.driftTimer);
+    if (this.settings.isoDates) this.rerenderDateFields();
   }
   async saveSettings() {
     await this.saveData(this.settings);
     await this.applyDefaults();
   }
-  /** Writes each enabled default into the vault config if it differs. */
-  async applyDefaults() {
+  /** The "Dates in properties" setting changed: redraw the date fields of open notes and Bases. */
+  async isoDatesChanged() {
+    await this.saveSettings();
+    this.rerenderDateFields();
+  }
+  /**
+   * Writes each enabled default into the vault config if it differs, except the items `skip` names. Returns
+   * what was set. Saving the plugin's settings applies the defaults too, so turning a setting on applies it at once.
+   */
+  async applyDefaults(skip = () => false) {
     const s = this.settings;
-    if (s.forceRootPaths) this.setConfig("newLinkFormat", "absolute");
-    if (s.forceAttachments && s.attachmentFolder.trim()) {
-      this.setConfig("attachmentFolderPath", s.attachmentFolder.trim());
+    const out = [];
+    const config = (key, value, what, setting) => {
+      if (!skip(key) && this.setConfig(key, value)) out.push({ id: key, what, setting });
+    };
+    this.applying = true;
+    try {
+      if (s.forceRootPaths)
+        config("newLinkFormat", "absolute", 'New link format: "Absolute path in vault"', "forceRootPaths");
+      const folder = s.attachmentFolder.trim();
+      if (s.forceAttachments && folder)
+        config("attachmentFolderPath", folder, `Attachment folder: "${folder}"`, "forceAttachments");
+      if (s.forceTrash) config("trashOption", "local", 'Deleted files: "Move to Obsidian trash"', "forceTrash");
+      if (s.forceCorePlugins)
+        for (const [id, what] of await this.applyCorePlugins(skip)) out.push({ id, what, setting: "forceCorePlugins" });
+      if (s.forceHotkeys)
+        for (const [id, what] of await this.applyHotkeys(skip)) out.push({ id, what, setting: "forceHotkeys" });
+    } finally {
+      this.applying = false;
     }
-    if (s.forceTrash) this.setConfig("trashOption", "local");
-    if (s.forceCorePlugins) await this.applyCorePlugins();
-    if (s.forceHotkeys) await this.applyHotkeys();
+    return out;
+  }
+  /**
+   * "Enforces vault settings on every device, on load and whenever they drift": a change made by hand (Settings →
+   * Files and links, Core plugins, Hotkeys), by a synced app.json / hotkeys.json, or by another plugin is put
+   * back, with a notice that names the Editor Defaults setting to turn off for changing it.
+   */
+  watchDrift() {
+    this.registerEvent(
+      this.app.vault.on("config-changed", (key) => {
+        if (ENFORCED_CONFIG.has(key)) this.requestEnforce();
+      })
+    );
+    const core = this.app.internalPlugins;
+    if (typeof core?.on === "function") this.registerEvent(core.on("change", () => this.requestEnforce()));
+    const hm = this.app.hotkeyManager;
+    const plugin = this;
+    if (hm && typeof hm.save === "function")
+      this.register(
+        around(hm, {
+          save: (next) => async function() {
+            await next.call(this);
+            plugin.requestEnforce();
+          }
+        })
+      );
+    const hotkeysFile = `${this.app.vault.configDir}/hotkeys.json`;
+    this.registerEvent(
+      this.app.vault.on("raw", (path) => {
+        if (path === hotkeysFile) this.requestEnforce();
+      })
+    );
+  }
+  requestEnforce() {
+    if (this.applying) return;
+    if (this.driftTimer !== null) window.clearTimeout(this.driftTimer);
+    this.driftTimer = window.setTimeout(() => {
+      this.driftTimer = null;
+      void this.enforce();
+    }, DRIFT_DELAY_MS);
+  }
+  async enforce() {
+    const now = Date.now();
+    const reverted = await this.applyDefaults((id) => !this.guard.allow(id, now));
+    this.warnHotkeyClashes();
+    if (!reverted.length) return;
+    for (const r of reverted) this.guard.record(r.id, now);
+    new import_obsidian3.Notice(
+      revertNotice(
+        reverted.map((r) => r.what),
+        reverted.map((r) => SETTING_NAMES[r.setting])
+      ),
+      8e3
+    );
+    const tab = this.app.setting?.isOpen ? this.app.setting.activeTab : null;
+    if (typeof tab?.onHotkeysChanged === "function") tab.onHotkeysChanged();
+    else if (tab && typeof tab.display === "function") {
+      const top = tab.containerEl?.scrollTop ?? 0;
+      tab.display();
+      if (tab.containerEl) tab.containerEl.scrollTop = top;
+    }
+  }
+  /**
+   * Warns (once per clash per session) when another command has one of the hotkeys set here (Alt+N, Navigate
+   * back / forward): Obsidian runs only one of them. The other command's hotkey is left alone.
+   */
+  warnHotkeyClashes() {
+    const hm = this.app.hotkeyManager;
+    const commands = { ...this.app.commands?.editorCommands, ...this.app.commands?.commands };
+    if (!this.settings.forceHotkeys || !hm) return;
+    const effective = {};
+    for (const id of Object.keys(commands)) effective[id] = hm.getHotkeys?.(id) ?? hm.getDefaultHotkeys?.(id) ?? [];
+    for (const c of hotkeyClashes(effective, import_obsidian3.Platform.isMacOS)) {
+      const key = `${c.other}|${c.label}`;
+      if (this.warnedClashes.has(key)) continue;
+      this.warnedClashes.add(key);
+      const name = (id) => this.app.commands?.findCommand?.(id)?.name ?? commands[id]?.name ?? id;
+      new import_obsidian3.Notice(
+        `Editor Defaults: ${c.label} (${name(c.command)}) is also the hotkey of "${name(c.other)}", so it may run that instead. Change or remove one of them in Settings \u2192 Hotkeys.`,
+        1e4
+      );
+    }
   }
   /** Sets each command in HOTKEYS to exactly its listed hotkeys (written to .obsidian/hotkeys.json). */
-  async applyHotkeys() {
+  async applyHotkeys(skip) {
     const hm = this.app.hotkeyManager;
-    if (!hm || typeof hm.setHotkeys !== "function") return;
-    let changed = false;
+    if (!hm || typeof hm.setHotkeys !== "function") return [];
+    const changed = [];
     for (const [id, keys] of Object.entries(HOTKEYS)) {
-      if (sameHotkeys(hm.getHotkeys?.(id), keys)) continue;
+      if (skip(id)) continue;
+      const now = hm.getHotkeys?.(id);
+      if (now !== void 0 && sameHotkeys(now, keys)) continue;
       hm.setHotkeys(
         id,
         keys.map((k) => ({ modifiers: [...k.modifiers], key: k.key }))
       );
-      changed = true;
+      changed.push([id, `the hotkeys of "${this.app.commands?.findCommand?.(id)?.name ?? id}"`]);
     }
-    if (changed) {
+    if (changed.length) {
       try {
         await hm.save?.();
       } catch (e) {
         console.error("[editor-defaults] could not save hotkeys", e);
       }
     }
+    return changed;
   }
+  /** Sets a vault config value if it differs; whether it did. */
   setConfig(key, value) {
     const vault = this.app.vault;
-    if (typeof vault.getConfig !== "function" || typeof vault.setConfig !== "function") return;
-    if (vault.getConfig(key) !== value) vault.setConfig(key, value);
+    if (typeof vault.getConfig !== "function" || typeof vault.setConfig !== "function") return false;
+    if (vault.getConfig(key) === value) return false;
+    vault.setConfig(key, value);
+    return true;
   }
-  async applyCorePlugins() {
+  async applyCorePlugins(skip) {
     const plugins = this.app.internalPlugins?.plugins;
-    if (!plugins) return;
+    if (!plugins) return [];
+    const changed = [];
     for (const [id, want] of Object.entries(CORE_PLUGINS)) {
       const p = plugins[id];
-      if (!p || p.enabled === want) continue;
+      if (!p || p.enabled === want || skip(id)) continue;
       try {
         if (want) await p.enable?.(true);
         else await p.disable?.(true);
+        changed.push([id, `core plugin ${p.instance?.name ?? id} ${want ? "on" : "off"}`]);
       } catch (e) {
         console.error(`[editor-defaults] could not ${want ? "enable" : "disable"} core plugin ${id}`, e);
       }
     }
+    return changed;
+  }
+  /**
+   * Redraws every Date / Date & time property field (notes in tabs, lanes and canvas cards, the File properties
+   * view, Bases tabs), so turning "Dates in properties" on or off, or the plugin, shows at once. Obsidian redraws a
+   * property everywhere when its type changes ("changed" on the metadata type manager); nothing is saved.
+   */
+  rerenderDateFields() {
+    const mtm = this.app.metadataTypeManager;
+    if (!mtm || typeof mtm.trigger !== "function") return;
+    const props = mtm.getAllProperties?.() ?? {};
+    for (const [key, info] of Object.entries(props))
+      if (info?.widget === "date" || info?.widget === "datetime") mtm.trigger("changed", key);
+    for (const leaf of this.app.workspace.getLeavesOfType("bases")) void leaf.rebuildView?.();
   }
   /** Date / Date & time property widgets: ISO text fields (see properties.ts). Undone on unload. */
   patchDateWidgets() {
     const widgets = this.app.metadataTypeManager?.registeredTypeWidgets;
     if (!widgets) return;
     const plugin = this;
-    for (const type of ["date", "datetime"]) {
+    const types = ["date", "datetime"];
+    for (const type of types) {
       const w = widgets[type];
       if (typeof w?.render !== "function") continue;
       this.register(
@@ -366,32 +650,113 @@ var EditorDefaultsPlugin = class extends import_obsidian3.Plugin {
       );
     }
   }
-  /** Wrap selectSuggestion on Obsidian's built-in [[ link suggester (undone on unload). */
+  /**
+   * What to change in a link just picked from a [[ dropdown: the note name Obsidian adds as an alias to a note
+   * pick, and, for a heading or block pick (where Obsidian keeps the note name as typed), the path from the
+   * vault root when new links use it.
+   */
+  pickFix(raw, sourcePath) {
+    const fix = {};
+    const item = linkSuggestion(raw);
+    const file = item.file;
+    if (!file) return fix;
+    if (item.type === "file" && this.settings.stripAlias) fix.dropAlias = file.basename;
+    if ((item.type === "heading" || item.type === "block") && this.settings.forceRootPaths && this.app.vault.getConfig?.("newLinkFormat") === "absolute")
+      fix.path = this.app.metadataCache.fileToLinktext(file, sourcePath, true);
+    return fix;
+  }
+  /** Wrap selectSuggestion on Obsidian's built-in [[ link suggester in the editor (undone on unload). */
   patchLinkSuggest() {
     const suggests = this.app.workspace.editorSuggest?.suggests ?? [];
     const plugin = this;
     for (const suggest of suggests) {
-      if (typeof suggest?.selectSuggestion !== "function" || suggest.__editorDefaultsPatched) continue;
-      suggest.__editorDefaultsPatched = true;
-      this.register(() => delete suggest.__editorDefaultsPatched);
+      if (typeof suggest?.selectSuggestion !== "function") continue;
       this.register(
         around(suggest, {
           selectSuggestion: (next) => function(item, evt) {
             const editor = this.context?.editor;
-            const name = item?.type === "file" ? item.file?.basename : void 0;
+            const fix = plugin.pickFix(item, this.context?.file?.path ?? "");
             const result = next.call(this, item, evt);
-            if (editor && name && plugin.settings.stripAlias) stripAliasBeforeCursor(editor, name);
+            if (editor && (fix.dropAlias !== void 0 || fix.path !== void 0)) fixLinkAtCursor(editor, fix);
             return result;
           }
         })
       );
     }
   }
+  /**
+   * The [[ suggester in property values is created per field, from a class Obsidian doesn't export. It is an
+   * AbstractInputSuggest that shows its suggestions through the base class, so its prototype is patched the
+   * first time one shows (undone on unload).
+   */
+  patchPropertyLinkSuggest() {
+    const plugin = this;
+    const patched = /* @__PURE__ */ new Set();
+    const patchProto = (proto) => {
+      patched.add(proto);
+      this.register(
+        around(proto, {
+          selectSuggestion: (next) => function(item, evt) {
+            const fix = plugin.pickFix(item, this.sourcePath ?? "");
+            if (fix.dropAlias === void 0 && fix.path === void 0) return next.call(this, item, evt);
+            const apply = (text, ch) => {
+              const r = fixPickedLink(text, ch, fix);
+              return r ? { text: text.slice(0, r.from) + r.text + text.slice(r.to), ch: r.ch } : null;
+            };
+            const onSelect = this.onSelectLink;
+            let committed = false;
+            if (typeof onSelect === "function")
+              this.onSelectLink = (text, e) => {
+                committed = true;
+                onSelect.call(this, apply(text, text.length)?.text ?? text, e);
+              };
+            try {
+              next.call(this, item, evt);
+            } finally {
+              this.onSelectLink = onSelect;
+            }
+            if (!committed) fixFieldLink(this.inputEl, apply);
+          }
+        })
+      );
+    };
+    const base = import_obsidian3.AbstractInputSuggest.prototype;
+    this.register(
+      around(base, {
+        showSuggestions: (next) => function(values) {
+          try {
+            const proto = Object.getPrototypeOf(this);
+            if (isPropertyLinkSuggestProto(proto) && !patched.has(proto) && "onSelectLink" in this && typeof this.onSelectLink === "function")
+              patchProto(proto);
+          } catch (e) {
+            console.error("[editor-defaults] could not patch the property link suggester", e);
+          }
+          return next.call(this, values);
+        }
+      })
+    );
+  }
 };
-function stripAliasBeforeCursor(editor, name) {
+function fixLinkAtCursor(editor, fix) {
   const cursor = editor.getCursor();
-  const fix = trailingAliasFix(editor.getLine(cursor.line).slice(0, cursor.ch), name);
-  if (!fix) return;
-  editor.replaceRange(fix.text, { line: cursor.line, ch: fix.from }, cursor);
-  editor.setCursor({ line: cursor.line, ch: fix.from + fix.text.length });
+  const r = fixPickedLink(editor.getLine(cursor.line), cursor.ch, fix);
+  if (!r) return;
+  editor.replaceRange(r.text, { line: cursor.line, ch: r.from }, { line: cursor.line, ch: r.to });
+  editor.setCursor({ line: cursor.line, ch: r.ch });
+}
+function fixFieldLink(el, apply) {
+  const text = el.textContent ?? "";
+  const sel = el.win.getSelection();
+  let ch = text.length;
+  if (sel && sel.focusNode && el.contains(sel.focusNode)) {
+    const range = el.doc.createRange();
+    range.setStart(el, 0);
+    range.setEnd(sel.focusNode, sel.focusOffset);
+    ch = range.toString().length;
+  }
+  const r = apply(text, ch);
+  if (!r) return;
+  el.textContent = r.text;
+  if (sel && el.firstChild) sel.collapse(el.firstChild, r.ch);
+  el.dispatchEvent(new Event("input"));
 }
