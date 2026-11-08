@@ -33,10 +33,10 @@ describe("enforced config keys", () => {
 describe("revertNotice", () => {
   it("names what was put back and each setting once", () => {
     expect(revertNotice(["A"], ["S"])).toBe(
-      'Editor Defaults put back A.\nTo change this, first turn off "S" in Editor Defaults\' settings.',
+      'Editor Defaults (Archit) put back A.\nTo change this, first turn off "S" in the Editor Defaults (Archit) settings.',
     );
     expect(revertNotice(["A", "B", "C"], ["S", "T", "S"])).toBe(
-      'Editor Defaults put back A, B and C.\nTo change these, first turn off "S" and "T" in Editor Defaults\' settings.',
+      'Editor Defaults (Archit) put back A, B and C.\nTo change these, first turn off "S" and "T" in the Editor Defaults (Archit) settings.',
     );
   });
 });

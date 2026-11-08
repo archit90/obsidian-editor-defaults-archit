@@ -212,7 +212,7 @@ export default class EditorDefaultsPlugin extends Plugin {
       this.warnedClashes.add(key);
       const name = (id: string) => this.app.commands?.findCommand?.(id)?.name ?? commands[id]?.name ?? id;
       new Notice(
-        `Editor Defaults: ${c.label} (${name(c.command)}) is also the hotkey of "${name(c.other)}", so it may run ` +
+        `Editor Defaults (Archit): ${c.label} (${name(c.command)}) is also the hotkey of "${name(c.other)}", so it may run ` +
           `that instead. Change or remove one of them in Settings → Hotkeys.`,
         10000,
       );

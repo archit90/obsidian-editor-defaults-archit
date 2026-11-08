@@ -1,7 +1,7 @@
-# Editor Defaults: test catalogue
+# Editor Defaults (Archit): test catalogue
 
-Deep test cases for Editor Defaults (`obsidian-editor-defaults`), run in a real Obsidian 1.15.0 on a copy of test
-vault 948 (20,000 notes; Editor Lanes routes every note into lanes, so a "tab" case adds an Editor Lanes routing
+Deep test cases for Editor Defaults (Archit) (`editor-defaults-archit`), run in a real Obsidian 1.15.0 on a copy of test
+vault 948 (20,000 notes; Editor Multiple Lanes routes every note into lanes, so a "tab" case adds an Editor Multiple Lanes routing
 exception for its note). Driven over the DevTools protocol with real key and mouse input (`Input.dispatchKeyEvent`,
 `Input.insertText`, `Input.dispatchMouseEvent`) where a person would type or click; Obsidian's own settings
 controls (dropdowns, toggles, the hotkey delete button) are driven by their DOM events. Runner: `e2e/run.mjs`
@@ -9,10 +9,14 @@ against sandbox 2 (`tools/obs-sandbox.sh start 2`, then `node e2e/run.mjs [--fil
 for A1. Sources: SPEC.md §2
 ("Plugins in a vault", "Hotkeys"), §5, system.md ("Plugins", "Settings"), prompt.md, or common sense.
 
-Surfaces: **tab** = a normal tab, **lanes** = an Editor Lanes card, **canvas-text** / **canvas-file** = a Canvas
+Surfaces: **tab** = a normal tab, **lanes** = an Editor Multiple Lanes card, **canvas-text** / **canvas-file** = a Canvas
 text card / file card being edited (their editor lives in an iframe), **Bases** = a `.base` table tab.
 
-**Final full run: 2026-11-07 (after the user decisions) — 71/71 automated cases PASS (`harness/ed/run.mjs`, console errors from Editor Defaults: 0), A1 restart and A1b fresh vault PASS, F9 MANUAL**
+**Final full run: 2026-11-07 (after the user decisions) — 71/71 automated cases PASS (`harness/ed/run.mjs`, console errors from Editor Defaults (Archit): 0), A1 restart and A1b fresh vault PASS, F9 MANUAL**
+
+**Without the other custom plugins (2026-11-08):** run with the other three disabled (saved, then a restart):
+63/63 PASS; the lanes-surface variants (`*-lanes`, 8 cases) are skipped without Editor Multiple Lanes, the same
+cases pass in a tab and in Canvas. Final config check OK.
 
 Status: PASS / FAIL / MANUAL (needs a person: native UI the harness can't drive). Fixed = failed before this
 round's fixes (see the report), passes now.
@@ -32,18 +36,18 @@ round's fixes (see the report), passes now.
 
 ## B. Vault settings (Files and links)
 
-| #   | Case                             | Steps                                                            | Expected                                                                                                                        | Source                                  | Status                     |
-| --- | -------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------- |
-| B1  | On load                          | —                                                                | `newLinkFormat` absolute, `attachmentFolderPath` u, `trashOption` local                                                         | §5, prompt.md app.json                  | PASS                       |
-| B2  | User changes New link format     | Settings → Files and links → New link format → Shortest          | Put back within ~0.3 s; notice names the Editor Defaults setting to turn off; the dropdown shows "Path from vault folder" again | §5 "whenever they drift"                | PASS (Fixed: not enforced) |
-| B3  | app.json changed on disk (sync)  | Write `relative` / `att` into app.json                           | Put back in memory and on disk, notice                                                                                          | §5 "on every device"                    | PASS (Fixed)               |
-| B4  | Toggle off / on                  | Turn "New links use path from vault root" off, change format     | Change stays, no notice; toggle on → absolute at once                                                                           | §5 "on/off setting"                     | PASS                       |
-| B6  | Attachments land in u/           | `getAvailablePathForAttachment("ed-test.png")`                   | `u/ed-test.png`                                                                                                                 | §5                                      | PASS                       |
-| B7  | Attachment folder field          | Type `assets` in Editor Defaults' field, then leave it           | No write while typing; app.json `assets` on blur; back to `u`                                                                   | §5 "applied when the field loses focus" | PASS                       |
-| B8  | Empty attachment folder          | Field blank                                                      | Not enforced (Obsidian's value stays)                                                                                           | common sense                            | PASS                       |
-| B9  | User changes attachment location | Files and links → Default location → Same folder as current file | Put back, dropdown refreshed, notice                                                                                            | §5                                      | PASS (Fixed)               |
-| B10 | Deleting goes to .trash          | `fileManager.trashFile` on a note                                | File in `.trash/`                                                                                                               | §5                                      | PASS                       |
-| B11 | User changes Deleted files       | Files and links → Deleted files → Permanently delete             | Put back, dropdown refreshed, notice                                                                                            | §5                                      | PASS (Fixed)               |
+| #   | Case                             | Steps                                                            | Expected                                                                                                                                 | Source                                  | Status                     |
+| --- | -------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------- |
+| B1  | On load                          | —                                                                | `newLinkFormat` absolute, `attachmentFolderPath` u, `trashOption` local                                                                  | §5, prompt.md app.json                  | PASS                       |
+| B2  | User changes New link format     | Settings → Files and links → New link format → Shortest          | Put back within ~0.3 s; notice names the Editor Defaults (Archit) setting to turn off; the dropdown shows "Path from vault folder" again | §5 "whenever they drift"                | PASS (Fixed: not enforced) |
+| B3  | app.json changed on disk (sync)  | Write `relative` / `att` into app.json                           | Put back in memory and on disk, notice                                                                                                   | §5 "on every device"                    | PASS (Fixed)               |
+| B4  | Toggle off / on                  | Turn "New links use path from vault root" off, change format     | Change stays, no notice; toggle on → absolute at once                                                                                    | §5 "on/off setting"                     | PASS                       |
+| B6  | Attachments land in u/           | `getAvailablePathForAttachment("ed-test.png")`                   | `u/ed-test.png`                                                                                                                          | §5                                      | PASS                       |
+| B7  | Attachment folder field          | Type `assets` in Editor Defaults (Archit)' field, then leave it  | No write while typing; app.json `assets` on blur; back to `u`                                                                            | §5 "applied when the field loses focus" | PASS                       |
+| B8  | Empty attachment folder          | Field blank                                                      | Not enforced (Obsidian's value stays)                                                                                                    | common sense                            | PASS                       |
+| B9  | User changes attachment location | Files and links → Default location → Same folder as current file | Put back, dropdown refreshed, notice                                                                                                     | §5                                      | PASS (Fixed)               |
+| B10 | Deleting goes to .trash          | `fileManager.trashFile` on a note                                | File in `.trash/`                                                                                                                        | §5                                      | PASS                       |
+| B11 | User changes Deleted files       | Files and links → Deleted files → Permanently delete             | Put back, dropdown refreshed, notice                                                                                                     | §5                                      | PASS (Fixed)               |
 
 ## C. Core plugins
 
@@ -70,8 +74,8 @@ round's fixes (see the report), passes now.
 | D9   | Toggle off / on                             | "Enforce hotkeys" off, Alt+M on create-from-template; on                                                   | Alt+M stays while off; on → Alt+N                                                                                                                                               | §5                                                                | PASS                                        |
 | D10  | User gives Alt+N to another command         | Toggle bold = Alt+N (saved in Settings → Hotkeys); then more hotkey and config changes                     | One warning notice naming "Toggle bold", Alt+N and Settings → Hotkeys; not repeated on later checks this session; Toggle bold keeps Alt+N; Alt+N still opens Templater's picker | user decision 3                                                   | PASS                                        |
 | D10b | A clash already there at load               | With the plugin off, give Toggle italics Ctrl+[; turn the plugin on                                        | Warning naming Ctrl+[, Navigate back and "Toggle italics" at load; the hotkey stays                                                                                             | user decision 3; unit `hotkeyClashes` (Mod is Ctrl, Cmd on macOS) | PASS                                        |
-| D11  | Something keeps undoing a default           | A listener sets trashOption back to system after every revert                                              | Editor Defaults gives up after 5 reverts in 10 s (console warning), enforces again after the window                                                                             | common sense (no endless fight)                                   | PASS                                        |
-| D12  | Lanes / Canvas navigation                   | Ctrl+[ in a lanes card or Canvas card                                                                      | Editor Lanes' / Canvas' history — not this plugin's                                                                                                                             | —                                                                 | n/a                                         |
+| D11  | Something keeps undoing a default           | A listener sets trashOption back to system after every revert                                              | Editor Defaults (Archit) gives up after 5 reverts in 10 s (console warning), enforces again after the window                                                                    | common sense (no endless fight)                                   | PASS                                        |
+| D12  | Lanes / Canvas navigation                   | Ctrl+[ in a lanes card or Canvas card                                                                      | Editor Multiple Lanes' / Canvas' history — not this plugin's                                                                                                                    | —                                                                 | n/a                                         |
 
 ## E. `[[` links
 
@@ -103,9 +107,9 @@ round's fixes (see the report), passes now.
 
 ## G. Settings tab
 
-| #   | Case    | Steps                           | Expected                                                        | Source | Status |
-| --- | ------- | ------------------------------- | --------------------------------------------------------------- | ------ | ------ |
-| G1  | The tab | Open Settings → Editor Defaults | Intro line; 7 toggles on, Attachment folder `u`, each described | §5     | PASS   |
+| #   | Case    | Steps                                    | Expected                                                        | Source | Status |
+| --- | ------- | ---------------------------------------- | --------------------------------------------------------------- | ------ | ------ |
+| G1  | The tab | Open Settings → Editor Defaults (Archit) | Intro line; 7 toggles on, Attachment folder `u`, each described | §5     | PASS   |
 
 ## TYPING
 

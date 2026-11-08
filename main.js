@@ -148,8 +148,8 @@ function list(items) {
 }
 function revertNotice(whats, settingNames) {
   const names = [...new Set(settingNames)].map((n) => `"${n}"`);
-  return `Editor Defaults put back ${list(whats)}.
-To change ${whats.length > 1 ? "these" : "this"}, first turn off ${list(names)} in Editor Defaults' settings.`;
+  return `Editor Defaults (Archit) put back ${list(whats)}.
+To change ${whats.length > 1 ? "these" : "this"}, first turn off ${list(names)} in the Editor Defaults (Archit) settings.`;
 }
 
 // src/links.ts
@@ -377,7 +377,7 @@ var EditorDefaultsTab = class extends import_obsidian2.PluginSettingTab {
     containerEl.empty();
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text: "While one of these is on, Editor Defaults puts its value back whenever it changes: in Obsidian's settings, from another device, or by another plugin. Turn it off here to change that value yourself."
+      text: "While one of these is on, Editor Defaults (Archit) puts its value back whenever it changes: in Obsidian's settings, from another device, or by another plugin. Turn it off here to change that value yourself."
     });
     this.toggle(
       'Keeps "New link format" set to "Absolute path in vault". Heading and block links picked from the [[ dropdown get the full path too.',
@@ -557,7 +557,7 @@ var EditorDefaultsPlugin = class extends import_obsidian3.Plugin {
       this.warnedClashes.add(key);
       const name = (id) => this.app.commands?.findCommand?.(id)?.name ?? commands[id]?.name ?? id;
       new import_obsidian3.Notice(
-        `Editor Defaults: ${c.label} (${name(c.command)}) is also the hotkey of "${name(c.other)}", so it may run that instead. Change or remove one of them in Settings \u2192 Hotkeys.`,
+        `Editor Defaults (Archit): ${c.label} (${name(c.command)}) is also the hotkey of "${name(c.other)}", so it may run that instead. Change or remove one of them in Settings \u2192 Hotkeys.`,
         1e4
       );
     }

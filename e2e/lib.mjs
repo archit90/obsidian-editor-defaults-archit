@@ -17,7 +17,7 @@ const PAGE = String.raw`
       return f;
     },
     async routeException(p) {
-      const lp = app.plugins.plugins["obsidian-editor-lanes"];
+      const lp = app.plugins.plugins["editor-multiple-lanes"];
       if (lp && !lp.settings.routeExceptions.split("\n").includes(p)) {
         lp.settings.routeExceptions = (lp.settings.routeExceptions ? lp.settings.routeExceptions + "\n" : "") + p;
         await lp.settingsChanged("routing");

@@ -14,7 +14,7 @@ async function pick(typed, k = "Enter", pre) {
   const t = await c.ev2("return E.text()");
   return { typed, items, t };
 }
-const P = 'app.plugins.plugins["obsidian-editor-defaults"]';
+const P = 'app.plugins.plugins["editor-defaults-archit"]';
 console.log(await pick("Abstraction delays tru", "Tab"));
 console.log(await pick("Maya I"));
 console.log(await pick("mayai"));

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { setup, sleep } from "./lib.mjs";
 
 const c = await setup();
-const P = `app.plugins.plugins["obsidian-editor-defaults"]`;
+const P = `app.plugins.plugins["editor-defaults-archit"]`;
 const args = process.argv.slice(2);
 const filter = args.includes("--filter") ? new RegExp(args[args.indexOf("--filter") + 1]) : null;
 const results = [];
@@ -155,10 +155,10 @@ const T = (id, title, fn) => cases.push({ id, title, fn });
 
 T("A2", "Disable + enable the plugin re-applies drifted defaults", async () => {
   await ev(
-    `await app.plugins.disablePlugin("obsidian-editor-defaults"); app.vault.setConfig("newLinkFormat","shortest"); app.vault.setConfig("trashOption","system"); app.vault.setConfig("attachmentFolderPath","./"); await app.internalPlugins.plugins.backlink.enable(true); await app.internalPlugins.plugins.bases.disable(true); app.hotkeyManager.setHotkeys("app:go-back",[]); app.hotkeyManager.removeHotkeys("templater-obsidian:insert-templater"); await app.hotkeyManager.save(); await E.sleep(800); return 1`,
+    `await app.plugins.disablePlugin("editor-defaults-archit"); app.vault.setConfig("newLinkFormat","shortest"); app.vault.setConfig("trashOption","system"); app.vault.setConfig("attachmentFolderPath","./"); await app.internalPlugins.plugins.backlink.enable(true); await app.internalPlugins.plugins.bases.disable(true); app.hotkeyManager.setHotkeys("app:go-back",[]); app.hotkeyManager.removeHotkeys("templater-obsidian:insert-templater"); await app.hotkeyManager.save(); await E.sleep(800); return 1`,
   );
   const drifted = await cfg();
-  await ev(`await app.plugins.enablePlugin("obsidian-editor-defaults"); await E.sleep(1500); return 1`);
+  await ev(`await app.plugins.enablePlugin("editor-defaults-archit"); await E.sleep(1500); return 1`);
   const after = await cfg();
   return [
     okCfg(after) && !okCfg(drifted),
@@ -173,14 +173,14 @@ T("A3", "Applying when everything is already right writes nothing (idempotent)",
 });
 T("A4", "Disabling the plugin removes every patch and stops enforcing; enabling brings them back", async () => {
   await ev(`await E.open("tab", ${JSON.stringify(DATE_NOTE)}); await E.sleep(700); return 1`);
-  await ev(`await app.plugins.disablePlugin("obsidian-editor-defaults"); await E.sleep(600); return 1`);
+  await ev(`await app.plugins.disablePlugin("editor-defaults-archit"); await E.sleep(600); return 1`);
   const off = await ev(
     `const s=app.workspace.editorSuggest.suggests[0]; return {suggestOwn: Object.hasOwn(s,"selectSuggestion"), flag: !!s.__editorDefaultsPatched, hmSave: Object.hasOwn(app.hotkeyManager,"save"), hmLoad: false, due: ${dateField("due")}?.type}`,
   ).catch(e => ({ err: String(e) }));
   const linkOff = await linkPick("tab", ["Abstraction delays tru", { k: "Enter" }]);
   await ev(`app.vault.setConfig("newLinkFormat","shortest"); await E.sleep(800); return 1`);
   const linkCfgOff = (await cfg()).link;
-  await ev(`await app.plugins.enablePlugin("obsidian-editor-defaults"); await E.sleep(1500); return 1`);
+  await ev(`await app.plugins.enablePlugin("editor-defaults-archit"); await E.sleep(1500); return 1`);
   const on = await ev(
     `await E.open("tab", ${JSON.stringify(DATE_NOTE)}); await E.sleep(700); const s=app.workspace.editorSuggest.suggests[0]; return {suggestOwn: Object.hasOwn(s,"selectSuggestion"), hmSave: Object.hasOwn(app.hotkeyManager,"save"), due: ${dateField("due")}?.type, link: app.vault.getConfig("newLinkFormat")}`,
   );
@@ -225,7 +225,7 @@ T("A6", "Templater disabled: no errors, hotkeys still written by id; Alt+N back 
 });
 T("A7", "Settings saved partly (old data.json) are merged with the defaults", async () => {
   const r = await ev(
-    `const p=${P}; const d=await p.loadData(); await p.saveData({forceTrash:false}); await app.plugins.disablePlugin("obsidian-editor-defaults"); await app.plugins.enablePlugin("obsidian-editor-defaults"); await E.sleep(800); const s={...app.plugins.plugins["obsidian-editor-defaults"].settings}; await app.plugins.plugins["obsidian-editor-defaults"].saveData(d ?? {}); await app.plugins.disablePlugin("obsidian-editor-defaults"); await app.plugins.enablePlugin("obsidian-editor-defaults"); await E.sleep(800); return s`,
+    `const p=${P}; const d=await p.loadData(); await p.saveData({forceTrash:false}); await app.plugins.disablePlugin("editor-defaults-archit"); await app.plugins.enablePlugin("editor-defaults-archit"); await E.sleep(800); const s={...app.plugins.plugins["editor-defaults-archit"].settings}; await app.plugins.plugins["editor-defaults-archit"].saveData(d ?? {}); await app.plugins.disablePlugin("editor-defaults-archit"); await app.plugins.enablePlugin("editor-defaults-archit"); await E.sleep(800); return s`,
   );
   return [r.forceTrash === false && r.forceRootPaths === true && r.isoDates === true && r.attachmentFolder === "u", r];
 });
@@ -320,7 +320,7 @@ T("B6", "New attachments go to u/", async () => {
   return [p === "u/ed-test.png", p];
 });
 T("B7", "Attachment folder field: typing doesn't write app.json; leaving the field does", async () => {
-  await settingsTab("obsidian-editor-defaults");
+  await settingsTab("editor-defaults-archit");
   const field = `${settingItem("Attachment folder")}.querySelector("input")`;
   // the settings window is another CDP target: type by input events, one per character, as typing does
   await ev(
@@ -585,7 +585,7 @@ T(
 T("D10b", "A clash already in hotkeys.json is warned about at load (Ctrl+[ on another command)", async () => {
   await clearNotices();
   const r = await ev(
-    `await app.plugins.disablePlugin("obsidian-editor-defaults"); app.hotkeyManager.setHotkeys("editor:toggle-italics",[{modifiers:["Ctrl"],key:"["}]); await app.hotkeyManager.save(); await app.plugins.enablePlugin("obsidian-editor-defaults"); await E.sleep(1500); const kept=app.hotkeyManager.getHotkeys("editor:toggle-italics"); app.hotkeyManager.removeHotkeys("editor:toggle-italics"); await app.hotkeyManager.save(); return kept`,
+    `await app.plugins.disablePlugin("editor-defaults-archit"); app.hotkeyManager.setHotkeys("editor:toggle-italics",[{modifiers:["Ctrl"],key:"["}]); await app.hotkeyManager.save(); await app.plugins.enablePlugin("editor-defaults-archit"); await E.sleep(1500); const kept=app.hotkeyManager.getHotkeys("editor:toggle-italics"); app.hotkeyManager.removeHotkeys("editor:toggle-italics"); await app.hotkeyManager.save(); return kept`,
   );
   const n = await notices();
   return [
@@ -829,7 +829,7 @@ T("F10", "Turning Dates in properties off / on redraws open notes and Bases tabs
 
 // ----- G: settings tab -----
 T("G1", "The settings tab lists every setting with its description", async () => {
-  await settingsTab("obsidian-editor-defaults");
+  await settingsTab("editor-defaults-archit");
   const r = await ev(
     `return [...app.setting.activeTab.containerEl.querySelectorAll(".setting-item")].map(i=>i.querySelector(".setting-item-name").textContent + (i.querySelector(".checkbox-container.is-enabled")?" [on]":i.querySelector("input[type=text]")?" ["+i.querySelector("input[type=text]").value+"]":" [off]"))`,
   );
@@ -840,8 +840,17 @@ T("G1", "The settings tab lists every setting with its description", async () =>
 // ---------- run ----------
 await ev(`await E.file("_test/ed-target.md","# Goals\\n\\nfirst para\\n\\nsecond para ^abc\\n"); return 1`);
 await ev(`E.errs.length=0; return 1`);
+// Editor Defaults doesn't need Editor Lanes: without it, the lanes-card variants of a case are skipped (the
+// same case still runs in a tab and in Canvas)
+const hasLanes = await ev(`return !!app.plugins.plugins["editor-multiple-lanes"]`);
+let skipped = 0;
 for (const cs of cases) {
   if (filter && !filter.test(cs.id) && !filter.test(cs.title)) continue;
+  if (!hasLanes && /-lanes(-|$)/.test(cs.id)) {
+    skipped++;
+    console.log(`SKIP ${cs.id} (Editor Lanes not enabled)`);
+    continue;
+  }
   let pass = false,
     ev_ = null;
   try {
@@ -859,7 +868,7 @@ for (const cs of cases) {
 }
 const errs = (await ev(`return E.errs`)).filter(e => !/MiniSearch|omnisearch/i.test(e));
 console.log(
-  `\n${results.filter(r => r.pass).length}/${results.length} passed; console errors (excluding Omnisearch): ${errs.length}`,
+  `\n${results.filter(r => r.pass).length}/${results.length} passed${skipped ? `, ${skipped} skipped (Editor Lanes not enabled)` : ""}; console errors (excluding Omnisearch): ${errs.length}`,
 );
 if (errs.length) console.log(errs.join("\n---\n"));
 const final = await cfg();

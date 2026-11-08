@@ -41,7 +41,7 @@ function list(items: string[]): string {
 export function revertNotice(whats: string[], settingNames: string[]): string {
   const names = [...new Set(settingNames)].map(n => `"${n}"`);
   return (
-    `Editor Defaults put back ${list(whats)}.\n` +
-    `To change ${whats.length > 1 ? "these" : "this"}, first turn off ${list(names)} in Editor Defaults' settings.`
+    `Editor Defaults (Archit) put back ${list(whats)}.\n` +
+    `To change ${whats.length > 1 ? "these" : "this"}, first turn off ${list(names)} in the Editor Defaults (Archit) settings.`
   );
 }

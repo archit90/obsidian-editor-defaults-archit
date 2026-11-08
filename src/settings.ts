@@ -88,7 +88,7 @@ export class EditorDefaultsTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.createEl("p", {
       cls: "setting-item-description",
-      text: "While one of these is on, Editor Defaults puts its value back whenever it changes: in Obsidian's settings, from another device, or by another plugin. Turn it off here to change that value yourself.",
+      text: "While one of these is on, Editor Defaults (Archit) puts its value back whenever it changes: in Obsidian's settings, from another device, or by another plugin. Turn it off here to change that value yourself.",
     });
 
     this.toggle(
