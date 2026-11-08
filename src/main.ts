@@ -1,10 +1,20 @@
 import { AbstractInputSuggest, Editor, EditorSuggest, Hotkey, Notice, Platform, Plugin, TFile } from "obsidian";
 import { around } from "monkey-around";
-import { CORE_PLUGINS, HOTKEYS, hotkeyClashes, sameHotkeys } from "./defaults";
-import { DriftGuard, ENFORCED_CONFIG, revertNotice } from "./drift";
-import { fixPickedLink, PickFix } from "./links";
+import {
+  CONFIG_RULES,
+  ENFORCED,
+  HOTKEY_NAMES,
+  HOTKEYS,
+  hotkeyClashes,
+  sameHotkeys,
+  wantedCorePlugins,
+} from "./defaults";
+import { DriftGuard, ENFORCED_CONFIG, revertNotice, stoppedNotice } from "./drift";
+import { fixPickedLink, isLinkTrigger, PickFix } from "./links";
 import { IsoType, isoifyWidget } from "./properties";
 import { DEFAULTS, EditorDefaultsTab, parseSettings, SETTING_NAMES, Settings } from "./settings";
+
+const logError = (what: string) => (e: unknown) => console.error(`[editor-defaults] ${what}`, e);
 
 /** What the [[ link suggesters pass to selectSuggestion (only the fields used here). */
 interface LinkSuggestion {
@@ -22,8 +32,18 @@ function linkSuggestion(item: unknown): LinkSuggestion {
 }
 
 /**
- * Obsidian's [[ suggester in property values (app.js `n5`, an AbstractInputSuggest): Enter or a click hands the
- * finished text to onSelectLink; Tab, `#` and `^` put it in the field and keep the dropdown open.
+ * Obsidian's own [[ link suggester among the editor suggesters: the one with a suggestManager that finds notes,
+ * headings and blocks. Other suggesters (tags, slash commands, every plugin's) are left alone.
+ */
+function isCoreLinkSuggest(s: unknown): boolean {
+  if (typeof s !== "object" || s === null || !("suggestManager" in s)) return false;
+  const m = s.suggestManager;
+  return typeof m === "object" && m !== null && "getFileSuggestions" in m && typeof m.getFileSuggestions === "function";
+}
+
+/**
+ * Obsidian's [[ suggester in property values (an AbstractInputSuggest whose class Obsidian doesn't export): Enter
+ * or a click hands the finished text to onSelectLink; Tab, `#` and `^` put it in the field and keep the dropdown open.
  */
 interface PropertyLinkSuggest {
   inputEl: HTMLElement;
@@ -51,6 +71,12 @@ function isPropertyLinkSuggestProto(proto: unknown): proto is PropertyLinkSugges
 /** How long to wait after a vault setting, core plugin or hotkey changes before checking it. */
 const DRIFT_DELAY_MS = 300;
 
+/**
+ * The Settings tabs that show values Editor Defaults puts back (Files and links, Core plugins, Hotkeys): redrawn
+ * after a put-back so they don't show the undone value. Other tabs, other plugins' among them, are never redrawn.
+ */
+const REDRAWN_TABS: ReadonlySet<string> = new Set(["file", "plugins", "hotkeys"]);
+
 /** One enforced default that was set: its id (config key, core plugin or command), what it is now, and the setting that keeps it. */
 interface Revert {
   id: string;
@@ -60,33 +86,65 @@ interface Revert {
 
 export default class EditorDefaultsPlugin extends Plugin {
   override settings: Settings = { ...DEFAULTS };
+  /** Set on unload: whatever is still running (an enforce, the layout-ready callback) stops there. */
+  private unloaded = false;
+  /** applyDefaults runs one at a time, in the order asked. */
+  private queue: Promise<unknown> = Promise.resolve();
   private applying = false;
+  /** Something changed while a run was applying (sync, a person, or the run's own writes): check again after it. */
+  private dirty = false;
   private driftTimer: number | null = null;
+  /** The check scheduled for when the guard lets a refused item be put back again. */
+  private recheckTimer: number | null = null;
+  private recheckAt = 0;
   private guard = new DriftGuard();
   /** Hotkey clashes already warned about this session ("other command|hotkey"). */
   private warnedClashes = new Set<string>();
 
   override async onload() {
+    // enabled while Obsidian runs: the open notes and Bases tabs already show Obsidian's own date fields
+    const midSession = this.app.workspace.layoutReady;
     this.settings = parseSettings(await this.loadData());
+    // at start, Obsidian loads plugins before it draws the workspace: every date field gets the patched widget
+    this.patchDateWidgets();
     this.addSettingTab(new EditorDefaultsTab(this.app, this));
     this.app.workspace.onLayoutReady(() => {
-      void this.applyDefaults().then(() => this.warnHotkeyClashes());
+      if (this.unloaded) return;
+      this.applyDefaults()
+        .then(() => this.warnHotkeyClashes())
+        .catch(logError("could not apply the defaults"));
       this.watchDrift();
       this.patchLinkSuggest();
       this.patchPropertyLinkSuggest();
-      this.patchDateWidgets();
-      if (this.settings.isoDates) this.rerenderDateFields();
+      if (midSession && this.settings.isoDates) this.rerenderDateFields();
     });
   }
 
   override onunload() {
+    this.unloaded = true;
     if (this.driftTimer !== null) window.clearTimeout(this.driftTimer);
+    if (this.recheckTimer !== null) window.clearTimeout(this.recheckTimer);
     // the date widgets are unpatched by now: open notes get Obsidian's own date fields back
     if (this.settings.isoDates) this.rerenderDateFields();
   }
 
+  /** data.json changed on disk (this plugin's settings from another device, through sync): use them at once. */
+  override async onExternalSettingsChange() {
+    if (this.unloaded) return;
+    const before = this.settings;
+    this.settings = parseSettings(await this.loadData());
+    // new settings: every item is enforced afresh, also one stopped for this session
+    this.guard = new DriftGuard();
+    await this.applyDefaults();
+    if (this.unloaded) return;
+    if (before.isoDates !== this.settings.isoDates) this.rerenderDateFields();
+    const tab = this.openSettingsTab();
+    if (tab?.id === this.manifest.id) tab.display?.();
+  }
+
   async saveSettings() {
     await this.saveData(this.settings);
+    this.guard = new DriftGuard();
     await this.applyDefaults();
   }
 
@@ -97,25 +155,30 @@ export default class EditorDefaultsPlugin extends Plugin {
   }
 
   /**
-   * Writes each enabled default into the vault config if it differs, except the items `skip` names. Returns
-   * what was set. Saving the plugin's settings applies the defaults too, so turning a setting on applies it at once.
+   * Writes each enabled default into the vault config if it differs, except the items `skip` refuses (asked only
+   * for items that differ). Returns what was set. Runs one at a time, after any run already asked for. Saving the
+   * plugin's settings applies the defaults too, so turning a setting on applies it at once.
    */
-  async applyDefaults(skip: (id: string) => boolean = () => false): Promise<Revert[]> {
+  applyDefaults(skip: (id: string) => boolean = () => false): Promise<Revert[]> {
+    const run = this.queue.then(() => this.applyNow(skip));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async applyNow(skip: (id: string) => boolean): Promise<Revert[]> {
+    if (this.unloaded) return [];
     const s = this.settings;
     const out: Revert[] = [];
-    const config = (key: string, value: string, what: string, setting: keyof Settings) => {
-      if (!skip(key) && this.setConfig(key, value)) out.push({ id: key, what, setting });
-    };
     this.applying = true;
     try {
-      // "absolute" == "Absolute path in vault" (path from the vault root)
-      if (s.forceRootPaths)
-        config("newLinkFormat", "absolute", 'New link format: "Absolute path in vault"', "forceRootPaths");
-      const folder = s.attachmentFolder.trim();
-      if (s.forceAttachments && folder)
-        config("attachmentFolderPath", folder, `Attachment folder: "${folder}"`, "forceAttachments");
-      // "local" == Obsidian trash (.trash), "system" == OS trash, "none" == delete permanently
-      if (s.forceTrash) config("trashOption", "local", 'Deleted files: "Move to Obsidian trash"', "forceTrash");
+      const vault = this.app.vault;
+      if (typeof vault.getConfig === "function" && typeof vault.setConfig === "function")
+        for (const rule of CONFIG_RULES) {
+          const value = rule.value(s);
+          if (!s[rule.setting] || !value || vault.getConfig(rule.key) === value || skip(rule.key)) continue;
+          vault.setConfig(rule.key, value);
+          out.push({ id: rule.key, what: rule.what(value), setting: rule.setting });
+        }
       if (s.forceCorePlugins)
         for (const [id, what] of await this.applyCorePlugins(skip)) out.push({ id, what, setting: "forceCorePlugins" });
       if (s.forceHotkeys)
@@ -123,13 +186,17 @@ export default class EditorDefaultsPlugin extends Plugin {
     } finally {
       this.applying = false;
     }
+    if (this.dirty) {
+      this.dirty = false;
+      this.requestEnforce();
+    }
     return out;
   }
 
   /**
    * "Enforces vault settings on every device, on load and whenever they drift": a change made by hand (Settings →
    * Files and links, Core plugins, Hotkeys), by a synced app.json / hotkeys.json, or by another plugin is put
-   * back, with a notice that names the Editor Defaults setting to turn off for changing it.
+   * back, with a notice that names the Editor Defaults (Archit) setting to turn off for changing it.
    */
   private watchDrift() {
     this.registerEvent(
@@ -146,9 +213,13 @@ export default class EditorDefaultsPlugin extends Plugin {
       this.register(
         around(hm, {
           save: next =>
-            async function (this: unknown) {
-              await next.call(this);
-              plugin.requestEnforce();
+            function (this: unknown, ...args: unknown[]) {
+              const saved: unknown = next ? Reflect.apply(next, this, args) : undefined;
+              void Promise.resolve(saved).then(
+                () => plugin.requestEnforce(),
+                () => undefined,
+              );
+              return saved instanceof Promise ? saved : Promise.resolve();
             },
         }),
       );
@@ -162,21 +233,35 @@ export default class EditorDefaultsPlugin extends Plugin {
   }
 
   private requestEnforce() {
-    if (this.applying) return;
+    if (this.unloaded) return;
+    if (this.applying) {
+      this.dirty = true;
+      return;
+    }
     if (this.driftTimer !== null) window.clearTimeout(this.driftTimer);
     this.driftTimer = window.setTimeout(() => {
       this.driftTimer = null;
-      void this.enforce();
+      this.enforce().catch(logError("could not put the defaults back"));
     }, DRIFT_DELAY_MS);
   }
 
   private async enforce() {
-    // something else that keeps setting one back (another plugin) would make the two fight forever
+    if (this.unloaded) return;
+    // something else that keeps setting one back (another plugin or device) would make the two fight forever
+    const refused = new Set<string>();
+    const reverted = await this.applyDefaults(id => {
+      if (this.guard.allow(id, Date.now())) return false;
+      refused.add(id);
+      return true;
+    });
+    if (this.unloaded) return;
     const now = Date.now();
-    const reverted = await this.applyDefaults(id => !this.guard.allow(id, now));
-    this.warnHotkeyClashes();
-    if (!reverted.length) return;
     for (const r of reverted) this.guard.record(r.id, now);
+    this.scheduleRecheck(refused, now);
+    this.warnHotkeyClashes();
+    const stopped = this.guard.takeStopped();
+    if (stopped.length) new Notice(stoppedNotice(stopped.map(id => this.describe(id))), 15000);
+    if (!reverted.length) return;
     new Notice(
       revertNotice(
         reverted.map(r => r.what),
@@ -184,29 +269,63 @@ export default class EditorDefaultsPlugin extends Plugin {
       ),
       8000,
     );
-    // an open Settings tab (Files and links, Core plugins, Hotkeys) still shows the value just undone
-    const tab = this.app.setting?.isOpen ? this.app.setting.activeTab : null;
-    // the Hotkeys tab redraws its list and keeps its filter; other tabs are drawn again where they were scrolled
-    if (typeof tab?.onHotkeysChanged === "function") tab.onHotkeysChanged();
-    else if (tab && typeof tab.display === "function") {
+    // an open Settings tab that shows these values still shows the one just undone
+    const tab = this.openSettingsTab();
+    if (!tab || !REDRAWN_TABS.has(tab.id ?? "")) return;
+    // the Hotkeys tab redraws its list and keeps its filter; the others are drawn again where they were scrolled
+    if (typeof tab.onHotkeysChanged === "function") tab.onHotkeysChanged();
+    else if (typeof tab.display === "function") {
       const top = tab.containerEl?.scrollTop ?? 0;
       tab.display();
       if (tab.containerEl) tab.containerEl.scrollTop = top;
     }
   }
 
+  private openSettingsTab() {
+    return this.app.setting?.isOpen ? (this.app.setting.activeTab ?? null) : null;
+  }
+
+  /** An item the guard refused is checked again once its window has passed, even if nothing else changes by then. */
+  private scheduleRecheck(refused: ReadonlySet<string>, now: number) {
+    const at = Math.min(...[...refused].map(id => this.guard.retryAt(id, now) ?? Infinity));
+    if (!Number.isFinite(at) || (this.recheckTimer !== null && this.recheckAt <= at)) return;
+    if (this.recheckTimer !== null) window.clearTimeout(this.recheckTimer);
+    this.recheckAt = at;
+    this.recheckTimer = window.setTimeout(
+      () => {
+        this.recheckTimer = null;
+        this.requestEnforce();
+      },
+      Math.max(0, at - now) + 50,
+    );
+  }
+
+  /** An enforced item (config key, core plugin or command) as a notice names it. */
+  private describe(id: string): string {
+    const rule = CONFIG_RULES.find(r => r.key === id);
+    if (rule) return rule.what(rule.value(this.settings));
+    const core = ENFORCED.corePlugins.find(r => r.id === id);
+    return core ? `core plugin ${core.name}` : `the hotkeys of "${this.commandName(id)}"`;
+  }
+
+  /** A command's name: its own, or the one in defaults.json while its plugin isn't loaded. */
+  private commandName(id: string): string {
+    return this.app.commands?.findCommand?.(id)?.name ?? HOTKEY_NAMES[id] ?? id;
+  }
+
   /**
    * Warns (once per clash per session) when another command has one of the hotkeys set here (Alt+N, Navigate
-   * back / forward): Obsidian runs only one of them. The other command's hotkey is left alone.
+   * back / forward): Obsidian runs only one of them. The other command's hotkey is left alone. A hotkey whose
+   * command doesn't exist (Templater not installed) clashes with nothing.
    */
   private warnHotkeyClashes() {
     const hm = this.app.hotkeyManager;
+    if (this.unloaded || !this.settings.forceHotkeys || !hm) return;
     // editor commands are only in `commands` while an editor has focus; `editorCommands` always has them
     const commands = { ...this.app.commands?.editorCommands, ...this.app.commands?.commands };
-    if (!this.settings.forceHotkeys || !hm) return;
     const effective: Record<string, Hotkey[]> = {};
     for (const id of Object.keys(commands)) effective[id] = hm.getHotkeys?.(id) ?? hm.getDefaultHotkeys?.(id) ?? [];
-    for (const c of hotkeyClashes(effective, Platform.isMacOS)) {
+    for (const c of hotkeyClashes(effective, Platform.isMacOS || Platform.isIosApp)) {
       const key = `${c.other}|${c.label}`;
       if (this.warnedClashes.has(key)) continue;
       this.warnedClashes.add(key);
@@ -222,18 +341,17 @@ export default class EditorDefaultsPlugin extends Plugin {
   /** Sets each command in HOTKEYS to exactly its listed hotkeys (written to .obsidian/hotkeys.json). */
   private async applyHotkeys(skip: (id: string) => boolean): Promise<[string, string][]> {
     const hm = this.app.hotkeyManager;
-    if (!hm || typeof hm.setHotkeys !== "function") return [];
+    if (typeof hm?.setHotkeys !== "function" || typeof hm.getHotkeys !== "function") return [];
     const changed: [string, string][] = [];
     for (const [id, keys] of Object.entries(HOTKEYS)) {
-      if (skip(id)) continue;
-      const now = hm.getHotkeys?.(id);
+      const now = hm.getHotkeys(id);
       // no entry at all means the command's default hotkeys (Templater's own, say): write the list explicitly
-      if (now !== undefined && sameHotkeys(now, keys)) continue;
+      if ((now !== undefined && sameHotkeys(now, keys)) || skip(id)) continue;
       hm.setHotkeys(
         id,
         keys.map(k => ({ modifiers: [...k.modifiers], key: k.key })),
       );
-      changed.push([id, `the hotkeys of "${this.app.commands?.findCommand?.(id)?.name ?? id}"`]);
+      changed.push([id, `the hotkeys of "${this.commandName(id)}"`]);
     }
     if (changed.length) {
       try {
@@ -245,36 +363,33 @@ export default class EditorDefaultsPlugin extends Plugin {
     return changed;
   }
 
-  /** Sets a vault config value if it differs; whether it did. */
-  private setConfig(key: string, value: unknown): boolean {
-    const vault = this.app.vault;
-    if (typeof vault.getConfig !== "function" || typeof vault.setConfig !== "function") return false;
-    if (vault.getConfig(key) === value) return false;
-    vault.setConfig(key, value);
-    return true;
+  /** Whether a community plugin is loaded (installed and enabled). */
+  private isPluginLoaded(id: string): boolean {
+    return !!this.app.plugins?.plugins?.[id];
   }
 
+  /** Turns the core plugins on or off as the rules say for the plugins loaded now (wantedCorePlugins). */
   private async applyCorePlugins(skip: (id: string) => boolean): Promise<[string, string][]> {
     const plugins = this.app.internalPlugins?.plugins;
     if (!plugins) return [];
     const changed: [string, string][] = [];
-    for (const [id, want] of Object.entries(CORE_PLUGINS)) {
+    for (const [id, want] of Object.entries(wantedCorePlugins(p => this.isPluginLoaded(p)))) {
       const p = plugins[id];
-      if (!p || p.enabled === want || skip(id)) continue;
+      const turn = want ? p?.enable : p?.disable;
+      if (!p || p.enabled === want || typeof turn !== "function" || skip(id)) continue;
       try {
-        if (want) await p.enable?.(true);
-        else await p.disable?.(true);
+        await turn.call(p, true);
         changed.push([id, `core plugin ${p.instance?.name ?? id} ${want ? "on" : "off"}`]);
       } catch (e) {
-        console.error(`[editor-defaults] could not ${want ? "enable" : "disable"} core plugin ${id}`, e);
+        console.error(`[editor-defaults] could not turn core plugin ${id} ${want ? "on" : "off"}`, e);
       }
     }
     return changed;
   }
 
   /**
-   * Redraws every Date / Date & time property field (notes in tabs, lanes and canvas cards, the File properties
-   * view, Bases tabs), so turning "Dates in properties" on or off, or the plugin, shows at once. Obsidian redraws a
+   * Redraws every Date / Date & time property field (notes in tabs, cards and canvases, the File properties view,
+   * Bases tabs), so turning "Dates in properties" on or off, or the plugin, shows at once. Obsidian redraws a
    * property everywhere when its type changes ("changed" on the metadata type manager); nothing is saved.
    */
   private rerenderDateFields() {
@@ -284,7 +399,8 @@ export default class EditorDefaultsPlugin extends Plugin {
     for (const [key, info] of Object.entries(props))
       if (info?.widget === "date" || info?.widget === "datetime") mtm.trigger("changed", key);
     // a Bases tab keeps its cells: build it again (its query, view and scroll come back from its state)
-    for (const leaf of this.app.workspace.getLeavesOfType("bases")) void leaf.rebuildView?.();
+    for (const leaf of this.app.workspace.getLeavesOfType("bases"))
+      leaf.rebuildView?.()?.catch(logError("could not redraw a Bases tab"));
   }
 
   /** Date / Date & time property widgets: ISO text fields (see properties.ts). Undone on unload. */
@@ -299,8 +415,8 @@ export default class EditorDefaultsPlugin extends Plugin {
       this.register(
         around(w, {
           render: next =>
-            function (this: unknown, el: HTMLElement, value: unknown, ctx: unknown) {
-              const widget = next.call(this, el, value, ctx);
+            function (this: unknown, el: HTMLElement, ...rest: unknown[]) {
+              const widget: unknown = next ? Reflect.apply(next, this, [el, ...rest]) : undefined;
               if (plugin.settings.isoDates) {
                 try {
                   isoifyWidget(type, widget, el);
@@ -335,26 +451,33 @@ export default class EditorDefaultsPlugin extends Plugin {
     return fix;
   }
 
-  /** Wrap selectSuggestion on Obsidian's built-in [[ link suggester in the editor (undone on unload). */
+  /** Wraps selectSuggestion on Obsidian's own [[ link suggester in the editor (undone on unload). */
   private patchLinkSuggest() {
-    const suggests = this.app.workspace.editorSuggest?.suggests ?? [];
-    const plugin = this;
-    for (const suggest of suggests) {
-      if (typeof suggest?.selectSuggestion !== "function") continue;
-      this.register(
-        around(suggest, {
-          selectSuggestion: next =>
-            function (this: EditorSuggest<unknown>, item: unknown, evt: MouseEvent | KeyboardEvent) {
-              // the context is gone once the suggestion is taken
-              const editor = this.context?.editor;
-              const fix = plugin.pickFix(item, this.context?.file?.path ?? "");
-              const result = next.call(this, item, evt);
-              if (editor && (fix.dropAlias !== undefined || fix.path !== undefined)) fixLinkAtCursor(editor, fix);
-              return result;
-            },
-        }),
-      );
+    const suggest = (this.app.workspace.editorSuggest?.suggests ?? []).find(isCoreLinkSuggest);
+    if (!suggest) {
+      console.warn("[editor-defaults] Obsidian's [[ link suggester wasn't found: picked links keep their alias");
+      return;
     }
+    const plugin = this;
+    this.register(
+      around(suggest, {
+        selectSuggestion: next =>
+          function (this: EditorSuggest<unknown>, item: unknown, ...rest: unknown[]) {
+            // the context is gone once the suggestion is taken
+            const ctx = this.context;
+            const editor = ctx?.editor;
+            // only a pick opened by [[ or ![[ (the query starts right after it)
+            const before =
+              ctx && editor
+                ? editor.getRange({ line: ctx.start.line, ch: Math.max(0, ctx.start.ch - 2) }, ctx.start)
+                : "";
+            const fix = isLinkTrigger(before) ? plugin.pickFix(item, ctx?.file?.path ?? "") : {};
+            const result: unknown = Reflect.apply(next, this, [item, ...rest]);
+            if (editor && (fix.dropAlias !== undefined || fix.path !== undefined)) fixLinkAtCursor(editor, fix);
+            return result;
+          },
+      }),
+    );
   }
 
   /**
@@ -370,9 +493,12 @@ export default class EditorDefaultsPlugin extends Plugin {
       this.register(
         around(proto, {
           selectSuggestion: next =>
-            function (this: PropertyLinkSuggest, item: unknown, evt: unknown) {
+            function (this: PropertyLinkSuggest, item: unknown, ...rest: unknown[]) {
               const fix = plugin.pickFix(item, this.sourcePath ?? "");
-              if (fix.dropAlias === undefined && fix.path === undefined) return next.call(this, item, evt);
+              if (fix.dropAlias === undefined && fix.path === undefined) {
+                Reflect.apply(next, this, [item, ...rest]);
+                return;
+              }
               const apply = (text: string, ch: number) => {
                 const r = fixPickedLink(text, ch, fix);
                 return r ? { text: text.slice(0, r.from) + r.text + text.slice(r.to), ch: r.ch } : null;
@@ -386,7 +512,7 @@ export default class EditorDefaultsPlugin extends Plugin {
                   onSelect.call(this, apply(text, text.length)?.text ?? text, e);
                 };
               try {
-                next.call(this, item, evt);
+                Reflect.apply(next, this, [item, ...rest]);
               } finally {
                 this.onSelectLink = onSelect;
               }
@@ -401,7 +527,7 @@ export default class EditorDefaultsPlugin extends Plugin {
     this.register(
       around(base, {
         showSuggestions: next =>
-          function (this: AbstractInputSuggest<unknown>, values: unknown[]) {
+          function (this: AbstractInputSuggest<unknown>, ...args: unknown[]) {
             try {
               const proto: unknown = Object.getPrototypeOf(this);
               if (
@@ -414,7 +540,7 @@ export default class EditorDefaultsPlugin extends Plugin {
             } catch (e) {
               console.error("[editor-defaults] could not patch the property link suggester", e);
             }
-            return next.call(this, values);
+            Reflect.apply(next, this, args);
           },
       }),
     );

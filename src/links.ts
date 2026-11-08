@@ -9,6 +9,14 @@ export interface WikiLink {
 
 const WIKILINK = /\[\[([^[\]|]*)(?:\|([^[\]]*))?\]\]/g;
 
+/**
+ * Whether a suggestion was opened by `[[` or `![[`: the text just before where its query starts (the suggester's
+ * `context.start`) ends with `[[`. Picks from other suggesters (tags, slash commands, other plugins') aren't touched.
+ */
+export function isLinkTrigger(textBeforeQuery: string): boolean {
+  return textBeforeQuery.endsWith("[[");
+}
+
 /** The wikilink in `line` around offset `ch` (strictly after its `[[`, up to just after its `]]`), or null. */
 export function linkAt(line: string, ch: number): WikiLink | null {
   for (const m of line.matchAll(WIKILINK)) {

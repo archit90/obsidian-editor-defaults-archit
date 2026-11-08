@@ -1,4 +1,5 @@
-// Obsidian internals this plugin relies on (not in the public API). Checked against Obsidian 1.15.0.
+// Obsidian internals this plugin relies on (not in the public API). Checked against Obsidian 1.15.0. Every member is
+// optional or checked before use, so a changed internal turns a feature off instead of throwing.
 import "obsidian";
 
 declare module "obsidian" {
@@ -7,9 +8,9 @@ declare module "obsidian" {
       getHotkeys?(commandId: string): Hotkey[] | undefined;
       /** The hotkeys a command registered (used when it has no entry of its own). */
       getDefaultHotkeys?(commandId: string): Hotkey[] | undefined;
-      setHotkeys(commandId: string, keys: Hotkey[]): void;
+      setHotkeys?(commandId: string, keys: Hotkey[]): void;
       /** Writes hotkeys.json (the Hotkeys tab calls it after each change). */
-      save(): Promise<void>;
+      save?(): Promise<void>;
     };
     internalPlugins?: {
       plugins: Record<
@@ -24,6 +25,10 @@ declare module "obsidian" {
       /** "change" fires after a core plugin is turned on or off. */
       on?(name: "change", callback: (plugin: unknown) => unknown): EventRef;
     };
+    /** Community plugins: `plugins` holds the loaded (enabled) ones by id. */
+    plugins?: {
+      plugins?: Record<string, unknown>;
+    };
     commands?: {
       /** Every registered command, by id. */
       commands?: Record<string, { id: string; name: string }>;
@@ -35,6 +40,7 @@ declare module "obsidian" {
     setting?: {
       isOpen?: boolean;
       activeTab?: {
+        /** "file" (Files and links), "plugins" (Core plugins), "hotkeys", or a plugin's id. */
         id?: string;
         containerEl?: HTMLElement;
         display?(): void;
@@ -46,11 +52,9 @@ declare module "obsidian" {
   interface App {
     /** Property types and their widgets (Properties core plugin). */
     metadataTypeManager?: {
-      registeredTypeWidgets: Record<
-        string,
-        { render(el: HTMLElement, value: unknown, ctx: unknown): { inputEl?: HTMLInputElement } | undefined }
-      >;
-      /** Lower-cased property name -> its name and widget type ("date", "datetime", "text"…). */
+      /** The widget objects render() returns are checked with isDateWidget (properties.ts) before use. */
+      registeredTypeWidgets?: Record<string, { render?(el: HTMLElement, value: unknown, ctx: unknown): unknown }>;
+      /** Lower-cased property name -> its name and the widget type it's shown with ("date", "datetime", "text"…). */
       getAllProperties?(): Record<string, { name: string; widget?: string }>;
       /** "changed" with a lower-cased property name redraws that property in every open note and Base. */
       trigger?(name: "changed", key: string): void;
@@ -73,7 +77,7 @@ declare module "obsidian" {
     rebuildView?(): Promise<void>;
   }
   interface Workspace {
-    /** Editor suggesters, including the built-in [[ link suggester. */
+    /** Editor suggesters: Obsidian's [[ link suggester (see isCoreLinkSuggest in main.ts) and plugins' ones. */
     editorSuggest?: { suggests: EditorSuggest<unknown>[] };
   }
 }

@@ -1,4 +1,5 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Platform, PluginSettingTab, Setting } from "obsidian";
+import { corePluginsDescription, ENFORCED, hotkeysDescription } from "./defaults";
 import type EditorDefaultsPlugin from "./main";
 
 export interface Settings {
@@ -7,8 +8,8 @@ export interface Settings {
   forceAttachments: boolean; // set "Default location for new attachments" to a folder
   attachmentFolder: string;
   forceTrash: boolean; // set "Deleted files" to "Move to Obsidian trash (.trash folder)"
-  forceCorePlugins: boolean; // enable/disable the core plugins listed in CORE_PLUGINS
-  forceHotkeys: boolean; // set the hotkeys listed in HOTKEYS
+  forceCorePlugins: boolean; // enable/disable the core plugins in defaults.json
+  forceHotkeys: boolean; // set the hotkeys in defaults.json
   isoDates: boolean; // Date / Date & time properties as YYYY-MM-DD text, not the locale-formatted picker
 }
 
@@ -16,7 +17,7 @@ export const DEFAULTS: Settings = {
   forceRootPaths: true,
   stripAlias: true,
   forceAttachments: true,
-  attachmentFolder: "u",
+  attachmentFolder: ENFORCED.attachmentFolder,
   forceTrash: true,
   forceCorePlugins: true,
   forceHotkeys: true,
@@ -35,7 +36,7 @@ export const SETTING_NAMES: Record<keyof Settings, string> = {
   isoDates: "Dates in properties as YYYY-MM-DD (date & time with seconds)",
 };
 
-type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
+export type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
 
 /** The on/off settings. */
 const BOOL_KEYS: BoolKey[] = [
@@ -62,7 +63,12 @@ export function parseSettings(raw: unknown): Settings {
   return out;
 }
 
+const logError = (e: unknown) => console.error("[editor-defaults] could not save the settings", e);
+
 export class EditorDefaultsTab extends PluginSettingTab {
+  /** The attachment folder as typed: applied when the field loses focus or the tab closes, never half-typed. */
+  private folderDraft: string | null = null;
+
   constructor(
     app: App,
     private plugin: EditorDefaultsPlugin,
@@ -75,12 +81,26 @@ export class EditorDefaultsTab extends PluginSettingTab {
       .setName(SETTING_NAMES[key])
       .setDesc(desc)
       .addToggle(t =>
-        t.setValue(this.plugin.settings[key]).onChange(async v => {
+        t.setValue(this.plugin.settings[key]).onChange(v => {
           this.plugin.settings[key] = v;
-          if (key === "isoDates") await this.plugin.isoDatesChanged();
-          else await this.plugin.saveSettings();
+          const saved = key === "isoDates" ? this.plugin.isoDatesChanged() : this.plugin.saveSettings();
+          saved.catch(logError);
         }),
       );
+  }
+
+  /** Applies the attachment folder being typed, trimmed, if it changed. */
+  private commitFolder() {
+    const draft = this.folderDraft?.trim();
+    this.folderDraft = null;
+    if (draft === undefined || draft === this.plugin.settings.attachmentFolder) return;
+    this.plugin.settings.attachmentFolder = draft;
+    this.plugin.saveSettings().catch(logError);
+  }
+
+  override hide() {
+    this.commitFolder();
+    super.hide();
   }
 
   override display() {
@@ -102,18 +122,17 @@ export class EditorDefaultsTab extends PluginSettingTab {
     this.toggle('Keeps "Default location for new attachments" set to the folder below.', "forceAttachments");
     new Setting(containerEl)
       .setName(SETTING_NAMES.attachmentFolder)
-      .setDesc("Path from the vault root.")
+      .setDesc("Path from the vault root. Applied when you leave the field.")
       .addText(t => {
-        // applied when the field loses focus: a half-typed folder must not become the attachment folder
-        t.setValue(this.plugin.settings.attachmentFolder).onChange(v => {
-          this.plugin.settings.attachmentFolder = v;
+        t.setValue(this.folderDraft ?? this.plugin.settings.attachmentFolder).onChange(v => {
+          this.folderDraft = v;
         });
-        t.inputEl.addEventListener("blur", () => void this.plugin.saveSettings());
+        t.inputEl.addEventListener("blur", () => this.commitFolder());
       });
     this.toggle('Keeps "Deleted files" set to "Move to Obsidian trash (.trash folder)".', "forceTrash");
-    this.toggle("Keeps Bases on, and Templates, Unique note creator and Backlinks off.", "forceCorePlugins");
+    this.toggle(corePluginsDescription(), "forceCorePlugins");
     this.toggle(
-      "Navigate back: Ctrl/Cmd+Alt+← and Ctrl/Cmd+[. Navigate forward: Ctrl/Cmd+Alt+→ and Ctrl/Cmd+]. Templater, create new note from template: Alt+N (and no hotkey on its insert template modal).",
+      `${hotkeysDescription(Platform.isMacOS || Platform.isIosApp)} A hotkey for a plugin that isn't installed is saved and works once it is.`,
       "forceHotkeys",
     );
     this.toggle(

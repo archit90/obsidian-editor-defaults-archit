@@ -5,7 +5,7 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   // e2e scripts (Node runners and page-side snippets evaluated in Obsidian over CDP) aren't plugin code
-  { ignores: ["**/node_modules/**", "**/main.js", "**/*.mjs", "**/*.cjs", "**/e2e/**/*.js"] },
+  { ignores: ["**/node_modules/**", "**/.sandbox*/**", "**/main.js", "**/*.mjs", "**/*.cjs", "**/e2e/**/*.js"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   prettier,

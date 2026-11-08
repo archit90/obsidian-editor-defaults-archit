@@ -1,0 +1,15 @@
+/* Editor Defaults (Archit): ISO date fields in properties (src/properties.ts). */
+
+/* the field's container is the hidden picker's positioned parent, so the native date picker opens next to it */
+.iso-date-host {
+  position: relative;
+}
+
+/* rendered but invisible: showPicker() needs a rendered input */
+.iso-date-hidden-picker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

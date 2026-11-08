@@ -1,11 +1,11 @@
 // Date / Date & time properties shown as ISO text instead of the browser's locale-formatted date picker.
 //
 // Obsidian 1.15.0 renders these property types with a native <input type="date"> / <input type="datetime-local">
-// (app.js: the "date" / "datetime" entries of metadataTypeManager.registeredTypeWidgets, widget classes with
-// `inputEl`, parse via moment(value, ["YYYY-MM-DD"]) / ["YYYY-MM-DD[T]HH:mm:ss"], commit on blur / Enter). The
-// browser draws such inputs in the OS locale (en-US: mm/dd/yyyy), whatever is stored. Turning the input into a
-// text field keeps Obsidian's own parsing and saving and shows the stored ISO value; a calendar button next to
-// it still opens the native picker (a hidden date input) for choosing a date with the mouse or on touch.
+// (the "date" / "datetime" entries of metadataTypeManager.registeredTypeWidgets: widget objects with `inputEl`,
+// parse via moment(value, ["YYYY-MM-DD"]) / ["YYYY-MM-DD[T]HH:mm:ss"], commit on blur / Enter). The browser draws
+// such inputs in the OS locale (en-US: mm/dd/yyyy), whatever is stored. Turning the input into a text field keeps
+// Obsidian's own parsing and saving and shows the stored ISO value; a calendar button next to it still opens the
+// native picker (a hidden date input, styles.css) for choosing a date with the mouse or on touch.
 
 import { moment, Notice, setIcon } from "obsidian";
 
@@ -79,24 +79,36 @@ export function invalidDateNotice(type: IsoType, typed: string, stored: string):
   }), so it wasn't saved. The field is back to ${back}.`;
 }
 
-/** The parts of Obsidian's date / datetime property widget used here (app.js r5 and subclasses). */
+/** The parts of Obsidian's date / datetime property widget used here. */
 export interface DateWidget {
-  inputEl?: HTMLInputElement;
+  inputEl: HTMLInputElement;
   /** The stored value (what the note holds). */
   value?: string;
   parse?(text: string): void;
   setValue?(value: string): void;
 }
 
+/** An <input> element, from any window: one in a popout or a Canvas card's frame isn't this window's HTMLInputElement. */
+function isInput(x: unknown): x is HTMLInputElement {
+  return typeof x === "object" && x !== null && "tagName" in x && x.tagName === "INPUT";
+}
+
+/** Whether what a date widget's render returned is the widget this module knows (it has its input element). */
+export function isDateWidget(w: unknown): w is DateWidget {
+  return typeof w === "object" && w !== null && "inputEl" in w && isInput(w.inputEl);
+}
+
 /** Make a rendered date / datetime property widget an ISO text field with a calendar button. */
-export function isoifyWidget(type: IsoType, widget: DateWidget | undefined, el: HTMLElement) {
-  const input = widget?.inputEl;
-  if (!widget || !input || input.dataset.isoDate) return;
+export function isoifyWidget(type: IsoType, rendered: unknown, el: HTMLElement) {
+  if (!isDateWidget(rendered)) return;
+  const widget = rendered;
+  const input = widget.inputEl;
+  if (input.dataset.isoDate) return;
   input.dataset.isoDate = "1";
   // Date & times are shown and typed as `YYYY-MM-DD HH:mm:ss`; Obsidian still parses ISO and saves
   // `YYYY-MM-DDTHH:mm:ss` (what Dataview, Bases and Obsidian itself expect), so the "T" only disappears from the
   // field. The browser's datetime-local value leaves out zero seconds (`…T09:30` for `…T09:30:00`), and adding
-  // them back while the input is still datetime-local is undone at once (review ED-03): they are added to the text.
+  // them back while the input is still datetime-local is undone at once by the browser: they are added to the text.
   const shown = (v: string) => (type === "datetime" ? canonicalText(type, shownDateTime(v)) : v);
   const value = input.value;
   input.type = "text";
@@ -146,13 +158,13 @@ export function isoifyWidget(type: IsoType, widget: DateWidget | undefined, el: 
     attr: { "aria-label": "Pick a date", role: "button", tabindex: "0" },
   });
   setIcon(button, "calendar");
+  // rendered but invisible (styles.css): showPicker() needs a rendered input, and opens next to it, so the field's
+  // container is its positioned parent
   const picker = el.createEl("input", {
     cls: "iso-date-hidden-picker",
     // step 1: the date & time picker offers seconds too
     attr: { type: ISO_FIELDS[type].picker, step: "1", tabindex: "-1", "aria-hidden": "true" },
   });
-  // rendered but invisible: showPicker() needs a rendered input, and opens next to it
-  picker.setCssStyles({ position: "absolute", width: "1px", height: "1px", opacity: "0", pointerEvents: "none" });
   el.addClass("iso-date-host");
   button.addEventListener("keydown", e => {
     if (e.key === "Enter" || e.key === " ") {

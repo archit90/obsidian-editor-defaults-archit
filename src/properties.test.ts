@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canonicalText,
   invalidDateNotice,
+  isDateWidget,
   isIsoText,
   isoDateTime,
   pickedText,
@@ -32,7 +33,7 @@ describe("ISO date fields", () => {
   });
 });
 
-describe("strict ISO input (review ED-02)", () => {
+describe("strict ISO input: Obsidian's lenient parse would misread other text", () => {
   it("accepts complete ISO dates and clearing", () => {
     expect(isIsoText("date", "2026-11-06")).toBe(true);
     expect(isIsoText("date", "")).toBe(true);
@@ -62,7 +63,7 @@ describe("what a saved field shows", () => {
   });
 });
 
-describe("the notice for text that isn't a date (user decision 2)", () => {
+describe("the notice for text that isn't a date", () => {
   it("says what was typed, the format, and what the field went back to", () => {
     expect(invalidDateNotice("date", " 06/11/2026 ", "2026-11-06")).toBe(
       '"06/11/2026" isn\'t a valid date (use YYYY-MM-DD), so it wasn\'t saved. The field is back to "2026-11-06".',
@@ -71,5 +72,13 @@ describe("the notice for text that isn't a date (user decision 2)", () => {
       '"7 Nov" isn\'t a valid date & time (use YYYY-MM-DD HH:mm:ss), so it wasn\'t saved. The field is back to "2026-11-07 10:00:00".',
     );
     expect(invalidDateNotice("date", "x", "")).toMatch(/back to empty\.$/);
+  });
+});
+
+describe("isDateWidget", () => {
+  it("knows Obsidian's widget by its input element, from any window", () => {
+    expect(isDateWidget({ inputEl: { tagName: "INPUT" } })).toBe(true);
+    expect(isDateWidget({ inputEl: { tagName: "DIV" } })).toBe(false);
+    for (const w of [undefined, null, {}, "x"]) expect(isDateWidget(w)).toBe(false);
   });
 });

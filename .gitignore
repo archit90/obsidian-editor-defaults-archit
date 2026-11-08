@@ -1,7 +1,7 @@
 node_modules/
 main.js
-# sandboxes of the e2e suite (e2e/sandbox.sh)
-.sandbox/
+# sandboxes of the e2e suite (e2e/sandbox.sh; .sandbox-*/ for runs with other plugins)
+.sandbox*/
 # per-run e2e output
 e2e/*.log
 e2e/results.json

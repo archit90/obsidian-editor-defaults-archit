@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fixPickedLink, linkAt } from "./links";
+import { fixPickedLink, isLinkTrigger, linkAt } from "./links";
 
 /** Applies fixPickedLink to `line` with the cursor at `¦`, and returns the result with `¦` at the new cursor. */
 function pick(marked: string, fix: Parameters<typeof fixPickedLink>[2]): string | null {
@@ -33,7 +33,7 @@ describe("linkAt", () => {
   });
 });
 
-describe("fixPickedLink: the alias Obsidian adds (review ED-01)", () => {
+describe("fixPickedLink: only the alias Obsidian adds goes", () => {
   it("Enter / click: cursor after ]]", () => {
     expect(pick("see [[z/Bar|Bar]]¦ x", { dropAlias: "Bar" })).toBe("see [[z/Bar]]¦ x");
   });
@@ -73,5 +73,15 @@ describe("fixPickedLink: heading and block picks get the path from the vault roo
   });
   it("does nothing when the path is already right", () => {
     expect(pick("[[z/Bar#Goals]]¦", { path: "z/Bar" })).toBeNull();
+  });
+});
+
+describe("isLinkTrigger: only picks from a [[ or ![[ dropdown are changed", () => {
+  it("is true right after [[ or ![[", () => {
+    expect(isLinkTrigger("see [[")).toBe(true);
+    expect(isLinkTrigger("![[")).toBe(true);
+  });
+  it("is false for other suggesters' triggers", () => {
+    for (const before of ["", "#", "/", "[", "see @@", "[[x]] "]) expect(isLinkTrigger(before)).toBe(false);
   });
 });

@@ -1,9 +1,11 @@
 // Run by e2e/sandbox.sh once a sandbox's Obsidian is up: trust the vault's plugins (first open of the copy),
-// close the settings window that follows, and size the window to the virtual screen.
-// Usage: node e2e/sandbox-init.mjs <cdp-port>
+// close the settings window that follows, size the window to the virtual screen, and wait until the plugin under
+// test has loaded. Fails (exit 1) if Obsidian stays in restricted mode or the plugin doesn't load.
+// Usage: node e2e/sandbox-init.mjs <cdp-port> [<plugin-id>]
 import { connect } from "./cdp.mjs";
 
-const c = await connect(process.argv[2]);
+const [port, id] = process.argv.slice(2);
+const c = await connect(port);
 // the page exists before Obsidian's app object does: wait for it
 for (let i = 0; i < 120; i++) {
   if (await c.ev(`typeof app !== "undefined" && !!app.workspace`)) break;
@@ -30,7 +32,24 @@ await c.ev(`(async () => {
   await new Promise(r => setTimeout(r, 800));
   return 1;
 })()`);
-console.log(
-  await c.ev(`JSON.stringify({ plugins: Object.keys(app.plugins.plugins).length, w: innerWidth, h: innerHeight })`),
-);
+// the plugins load after the layout: wait for the one under test (30 s)
+const state = await c.ev(`(async () => {
+  for (let i = 0; i < 60; i++) {
+    const restricted = typeof app.plugins.isEnabled === "function" && !app.plugins.isEnabled();
+    const loaded = ${JSON.stringify(id ?? "")} === "" || !!app.plugins.plugins[${JSON.stringify(id ?? "")}];
+    if (restricted || (app.workspace.layoutReady && loaded)) return { restricted, loaded };
+    await new Promise(r => setTimeout(r, 500));
+  }
+  return { restricted: false, loaded: false };
+})()`);
+const info = await c.ev(`JSON.stringify({ plugins: Object.keys(app.plugins.plugins), w: innerWidth, h: innerHeight })`);
+console.log(info);
+if (state.restricted) {
+  console.error("Obsidian is in restricted mode: community plugins are off in this sandbox");
+  process.exit(1);
+}
+if (!state.loaded) {
+  console.error(`${id} didn't load (see Settings → Community plugins, or the sandbox's obs.log)`);
+  process.exit(1);
+}
 process.exit(0);

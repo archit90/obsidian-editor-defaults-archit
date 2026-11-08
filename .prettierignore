@@ -1,7 +1,7 @@
 node_modules/
 main.js
 package-lock.json
-.sandbox/
+.sandbox*/
 e2e/CASES.md
 e2e/*results*.md
 e2e/results*.json

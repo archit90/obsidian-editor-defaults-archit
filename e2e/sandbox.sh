@@ -9,6 +9,7 @@
 #   e2e/sandbox.sh reset   <n>             stop, delete sandbox n's vault and profile, start fresh
 #   e2e/sandbox.sh deploy  <n>             copy this build (main.js, manifest.json, styles.css) in and reload it
 #   e2e/sandbox.sh shot    <n> <file.png>  screenshot of sandbox n's display
+#   e2e/sandbox.sh status  <n>             whether sandbox n runs, and its vault
 #
 # Sandbox n: display :(110+n), CDP port 9310+n, files in $OBS_SANDBOX_DIR/sb<n>/ (default: .sandbox/ in this
 # repo, git-ignored). Drive it with e2e/cdp.mjs (CDP_PORT=9310+n) or the e2e runner.
@@ -19,7 +20,9 @@
 # Either way it gets a _test/ folder, and the plugins in OBS_PLUGINS, to test them together: a list separated by
 # ":" of folders holding a built main.js and manifest.json, or GitHub repos as owner/repo (latest release) or
 # owner/repo@<version>, downloaded once into .sandbox/plugins/. Every start copies the current build of this
-# plugin in first, so a sandbox never runs a stale one.
+# plugin in first, so a sandbox never runs a stale one. If e2e/make-vault.mjs exists, it runs once the vault is
+# made (`node e2e/make-vault.mjs <vault>`, before Obsidian starts): the place for fixtures the suite wants on disk
+# (many notes, app.json settings, core plugins).
 #
 # OBS_APP: the Obsidian AppImage or binary (default ~/AppImages/obsidian.appimage_1_15_0.appimage).
 # Needs Xvfb, rsync, curl, node, and ImageMagick (`import`) for screenshots.
@@ -75,6 +78,7 @@ make_vault() {
   mkdir -p "$V/.obsidian/plugins" "$V/_test"
   local IFS=:
   for p in ${OBS_PLUGINS:-}; do install_plugin "$p" || return 1; done
+  if [ -f "$HERE/make-vault.mjs" ]; then node "$HERE/make-vault.mjs" "$V" || { echo "e2e/make-vault.mjs failed" >&2; return 1; }; fi
 }
 
 stop() {
@@ -95,6 +99,10 @@ start() {
   [ -f "$ROOT/main.js" ] || { echo "no main.js: build first (npm run build)" >&2; return 1; }
   [ -d "$V" ] || make_vault || return 1
   install_plugin "$ROOT" || return 1
+  # the plugins to test together are copied again too (folders may hold newer builds; releases are cached)
+  local IFS=:
+  for p in ${OBS_PLUGINS:-}; do install_plugin "$p" || return 1; done
+  unset IFS
   mkdir -p "$P"
   # the profile opens only this sandbox's vault
   printf '{"vaults":{"sandbox%s":{"path":"%s","ts":%s000,"open":true}},"updateDisabled":true}\n' "$n" "$V" "$(date +%s)" >"$P/obsidian.json"
@@ -109,7 +117,7 @@ start() {
   echo $! >"$BASE/obs.pid"
   for _ in $(seq 60); do
     if curl -s "localhost:$PORT/json/list" 2>/dev/null | grep -q 'app://obsidian.md'; then
-      node "$HERE/sandbox-init.mjs" "$PORT"
+      node "$HERE/sandbox-init.mjs" "$PORT" "$ID" || { echo "sandbox $n started, but isn't ready (above)" >&2; return 1; }
       echo "sandbox $n up: DISPLAY=:$D CDP_PORT=$PORT vault=$V"
       return 0
     fi
@@ -125,6 +133,7 @@ case $cmd in
   restart) stop; start ;;
   reset) stop; rm -rf "$V" "$P"; start ;;
   deploy)
+    curl -s "localhost:$PORT/json/version" >/dev/null 2>&1 || { echo "sandbox $n isn't running (start it first)" >&2; exit 1; }
     install_plugin "$ROOT" || exit 1
     CDP_PORT=$PORT node "$HERE/cdp.mjs" "(async()=>{await app.plugins.loadManifests(); await app.plugins.disablePlugin('$ID'); await app.plugins.enablePlugin('$ID'); return 'reloaded $ID'})()"
     ;;
@@ -133,6 +142,13 @@ case $cmd in
     f=$(realpath -m "${3:?file.png}")
     mkdir -p "$(dirname "$f")"
     DISPLAY=":$D" import -window root "$f"
+    ;;
+  status)
+    if curl -s "localhost:$PORT/json/version" >/dev/null 2>&1; then
+      echo "sandbox $n: running on port $PORT, display :$D, vault $(CDP_PORT=$PORT node "$HERE/cdp.mjs" 'app.vault.adapter.basePath')"
+    else
+      echo "sandbox $n: not running (port $PORT is free); its files: $BASE"
+    fi
     ;;
   *) usage ;;
 esac
