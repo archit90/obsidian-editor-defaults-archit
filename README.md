@@ -18,15 +18,22 @@ change one. Each item can be turned off:
 
 ## Install with BRAT
 
-BRAT → **Add beta plugin** → `{{REPO}}` → Add plugin, then enable **Editor Defaults (Archit)** in Community plugins.
+BRAT → **Add beta plugin** → `archit90/obsidian-editor-defaults-archit` → Add plugin, then enable **Editor Defaults (Archit)** in Community plugins.
 
 ## Building
 
 ```sh
 npm install
-npm run build   # main.js
-npm test        # unit tests
+npm run build                    # main.js
+npm test                         # unit tests
+npm run check                    # format, lint, typecheck, unit tests, build, smoke load: before every commit
+npm run deploy -- <vault> …      # build and copy into vaults that have the plugin installed (--install adds it)
 ```
+
+Releasing: `npm version patch` (or `minor` / `major`) bumps `package.json`, `manifest.json` and `versions.json` and
+tags the commit with the version; `git push --follow-tags` then runs the release workflow, which checks, builds and
+publishes the GitHub release BRAT installs from. End-to-end tests: see `TEST-CASES.md` and `SPEC.md`
+(Development).
 
 ## Licence
 

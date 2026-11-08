@@ -1,0 +1,28 @@
+# Pushing a tag that equals manifest.json's version (npm version patch && git push --follow-tags) builds the
+# plugin and creates the GitHub release BRAT installs from: main.js, manifest.json and styles.css as assets.
+name: Release
+on:
+  push:
+    tags: ["*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: The tag must be the manifest version
+        run: test "$(node -p "require('./manifest.json').version")" = "$GITHUB_REF_NAME"
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets="main.js manifest.json"
+          if [ -f styles.css ]; then assets="$assets styles.css"; fi
+          gh release create "$GITHUB_REF_NAME" $assets --title "$GITHUB_REF_NAME" --notes "Version $GITHUB_REF_NAME"

@@ -1,0 +1,9 @@
+node_modules/
+main.js
+package-lock.json
+.sandbox/
+e2e/CASES.md
+e2e/*results*.md
+e2e/results*.json
+e2e/restart.*.json
+e2e/*.log
