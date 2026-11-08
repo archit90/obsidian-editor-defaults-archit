@@ -1,6 +1,6 @@
 {
   "name": "obsidian-editor-defaults-archit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Enforces vault defaults on every device, on load and whenever they drift: links use the full path from the vault root without a |alias, attachments go to one folder, deleted files go to the Obsidian trash, core plugins and hotkeys are set, and date properties show as YYYY-MM-DD.",
   "license": "MIT",
   "author": "Archit Gupta",
@@ -29,7 +29,8 @@
     "e2e": "node e2e/run.mjs",
     "e2e:restart": "bash e2e/restart.sh",
     "e2e:fresh": "bash e2e/restart.sh --fresh",
-    "version": "node scripts/version-bump.mjs && git add manifest.json versions.json"
+    "version": "node scripts/version-bump.mjs && git add manifest.json versions.json",
+    "release": "npm version patch"
   },
   "dependencies": {
     "monkey-around": "^3.0.0"

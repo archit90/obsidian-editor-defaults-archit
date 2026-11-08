@@ -42,9 +42,10 @@ npm run check                    # format, lint, typecheck, unit tests, build, s
 npm run deploy -- <vault> …      # build and copy into vaults that have the plugin installed (--install adds it)
 ```
 
-Releasing: `npm version patch` (or `minor` / `major`) bumps `package.json`, `manifest.json` and `versions.json` and
-tags the commit with the version; `git push --follow-tags` then runs the release workflow, which checks, builds and
-publishes the GitHub release BRAT installs from.
+Releasing: `npm run release` bumps the patch version only (0.1.1 → 0.1.2 …) in `package.json`, `manifest.json`
+and `versions.json` and tags the commit with it; `git push --follow-tags` then runs the release workflow, which
+checks, builds and publishes the GitHub release BRAT installs from. A new minor or major version is a deliberate
+choice: `ALLOW_MINOR_BUMP=1 npm version minor`.
 
 End-to-end tests run in a throwaway Obsidian (sandbox 2: `e2e/sandbox.sh`, see `SPEC.md`, Development):
 `npm run build && e2e/sandbox.sh reset 2 && npm run e2e`, then `npm run e2e:restart`. The cases are in `TEST-CASES.md`.

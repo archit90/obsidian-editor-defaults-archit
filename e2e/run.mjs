@@ -361,9 +361,18 @@ T("B11", "Settings → Files and links: changing Deleted files is put back", asy
 T("B3", "app.json changed on disk (sync) is put back and written back", async () => {
   await clearNotices();
   await sleep(3000);
+  // Obsidian's file watcher can miss a write (it reports none for this file then, so there's nothing for the plugin
+  // to put back): wait for its raw event on app.json, and write again if none came
   await ev(
-    `const fs=require("fs"), f=app.vault.adapter.basePath+"/.obsidian/app.json"; const a=JSON.parse(fs.readFileSync(f,"utf8")); a.newLinkFormat="relative"; a.attachmentFolderPath="att"; fs.writeFileSync(f, JSON.stringify(a,null,2)); return 1`,
+    `window.__b3raw = 0; E.b3ref = app.vault.on("raw", p => { if (p === app.vault.configDir + "/app.json") window.__b3raw++; }); return 1`,
   );
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await ev(
+      `const fs=require("fs"), f=app.vault.adapter.basePath+"/.obsidian/app.json"; const a=JSON.parse(fs.readFileSync(f,"utf8")); a.newLinkFormat="relative"; a.attachmentFolderPath="att"; fs.writeFileSync(f, JSON.stringify(a,null,2)); return 1`,
+    );
+    if (await waitFor(`return window.__b3raw > 0`, 4000)) break;
+  }
+  await ev(`app.vault.offref(E.b3ref); return 1`);
   await sleep(3000);
   const r = {
     cfg: await cfg(),
@@ -634,7 +643,16 @@ for (const s of ["tab", "lanes", "canvas-text"])
         `if(!E.created){E.created=[]; app.vault.on("create", f=>E.created.push(f.path)); app.vault.on("rename", f=>E.created.push(f.path));} E.created.length=0; return await E.open(${JSON.stringify(s)}, "abc")`,
       );
       await c.key("n", { alt: true });
-      await modal(2500);
+      const picker = await modal(2500);
+      if (!picker)
+        return [
+          false,
+          {
+            noPicker: await ev(
+              `const a=document.activeElement; return {active: a?.tagName+"."+[...(a?.classList||[])].join("."), inFrame: a?.tagName==="IFRAME", hk: app.hotkeyManager.getHotkeys("templater-obsidian:create-new-note-from-template"), cmd: !!app.commands.findCommand("templater-obsidian:create-new-note-from-template"), modals: document.querySelectorAll(".modal-container").length}`,
+            ),
+          },
+        ];
       await c.type("ed-zettel");
       await sleep(500);
       await c.key("Enter");
@@ -1215,10 +1233,16 @@ try {
       } catch (e) {
         evidence = "ERROR " + String(e.message || e).split("\n")[0];
       }
+    // close what a case left open, so the next case's keys don't go into it: Settings, and every modal, also
+    // prompts that have only a Cancel button (a rename prompt); Escape for anything still open
     try {
       await ev(
-        `if (app.setting.isOpen) app.setting.close(); document.querySelectorAll(".modal-container").forEach(m=>m.querySelector(".modal-close-button")?.click()); return 1`,
+        `if (app.setting.isOpen) app.setting.close(); document.querySelectorAll(".modal-container").forEach(m=>m.querySelector(".modal-close-button, .mod-cancel")?.click()); return 1`,
       );
+      for (let i = 0; i < 3 && (await ev(`return document.querySelectorAll(".modal-container").length`)); i++) {
+        await c.key("Escape");
+        await sleep(200);
+      }
     } catch {}
     results.push({ id: cs.id, title: cs.title, pass, evidence });
     console.log(`${pass ? "PASS" : "FAIL"} ${cs.id} ${cs.title}${pass ? "" : "\n     " + JSON.stringify(evidence)}`);

@@ -138,11 +138,14 @@ Numbered so `TEST-CASES.md` can cite them ("decision 3").
   holds the date fields' picker layout.
 - **Internals:** every Obsidian internal used was checked against Obsidian 1.15.0's `app.js` and `app.css`.
   `minAppVersion` is 1.15.0. A new Obsidian version means re-checking them.
-- **Versions and releases:** `npm version patch|minor|major` bumps `package.json`, then `scripts/version-bump.mjs`
-  copies the version into `manifest.json` and `versions.json`; npm commits and tags it (tag = the version, no
-  `v`, `.npmrc`). `git push --follow-tags` runs `.github/workflows/release.yml`: `npm run check`, a check that the
-  tag is the manifest version, then a GitHub release with `main.js`, `manifest.json` and `styles.css`, which BRAT
-  installs. `isDesktopOnly` is false.
+- **Versions and releases:** the version is 0.1.1, and releases bump the patch version only (0.1.1 → 0.1.2 …);
+  the minor and major stay. `npm run release` (= `npm version patch`) bumps `package.json`, then
+  `scripts/version-bump.mjs` copies the version into `manifest.json` and `versions.json`; npm commits and tags it
+  (tag = the version, no `v`, `.npmrc`). `scripts/version-bump.mjs` refuses a new minor or major version (and puts
+  `package.json` back) unless it's asked for with `ALLOW_MINOR_BUMP=1 npm version minor|major`. `git push
+--follow-tags` runs `.github/workflows/release.yml`: `npm run check`, a check that the tag is the manifest
+  version, then a GitHub release with `main.js`, `manifest.json` and `styles.css`, which BRAT installs.
+  `isDesktopOnly` is false.
 - **Trying a build in a vault:** `npm run deploy -- <vault> …` (or `OBSIDIAN_VAULTS`) builds and copies `main.js`,
   `manifest.json` and `styles.css` into each vault that already has the plugin (`--install` adds it); `data.json`
   is never touched. Reload the plugin in Obsidian afterwards.
