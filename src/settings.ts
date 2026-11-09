@@ -145,9 +145,9 @@ export class EditorDefaultsTab extends PluginSettingTab {
     if (st.note === "missing")
       status.addButton(b =>
         b
-          .setButtonText("Create from this vault")
+          .setButtonText("Create from the default")
           .setCta()
-          .onClick(() => void this.plugin.createSetupNote().then(() => this.display())),
+          .onClick(() => void this.plugin.setup.run(true).then(() => this.display())),
       );
     else if (st.note === "ok") {
       status.addButton(b =>

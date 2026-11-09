@@ -4,6 +4,7 @@ import { capture, differences, equal, merged, toJson, withoutDefaults } from "./
 import { formatHotkey, normalHotkeys, parseHotkey } from "./hotkeys";
 import { addLinesAfter, appendSection, findBlocks, replaceBlockYaml } from "./note";
 import { appliesHere, blockValue, readNote, wantedCorePlugins } from "./model";
+import { bundledNote } from "./setup";
 
 describe("json", () => {
   it("merges objects key by key; lists and values replace", () => {
@@ -167,5 +168,25 @@ describe("toJson", () => {
     expect(toJson(o)).toEqual({ a: 1, d: { x: [1, "y"] } });
     const shared = { k: 1 };
     expect(toJson({ p: shared, q: shared })).toEqual({ p: { k: 1 }, q: { k: 1 } });
+  });
+});
+
+describe("the bundled settings note", () => {
+  it("parses without errors, dated as asked, with a block per plugin and Obsidian's settings", () => {
+    const text = bundledNote("2030-01-02T03:04:05");
+    expect(text).toMatch(/^---\ntype: system\ncreated: 2030-01-02T03:04:05\n---\n/);
+    const n = readNote(text, parseYaml);
+    expect(n.errors).toEqual([]);
+    const plugins = n.blocks.flatMap(b => (b.kind === "plugin" ? [b.id] : []));
+    expect(plugins).toContain("editor-defaults-archit");
+    expect(plugins).toContain("templater-obsidian");
+    expect(plugins).toContain("obsidian42-brat");
+    expect(n.blocks.filter(b => b.kind === "obsidian").map(b => (b.kind === "obsidian" ? b.target : ""))).toEqual([
+      "app",
+      "core-plugins",
+      "hotkeys",
+      "property-types",
+      "config:canvas",
+    ]);
   });
 });

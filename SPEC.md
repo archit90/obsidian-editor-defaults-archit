@@ -60,10 +60,13 @@ uninstalled` that is, waits for one click in a dialog ("Apply and install" / "No
   check of its own right after.
 - **A block that can't be used** (YAML error, wrong value, a second block for the same thing) is skipped, the rest of
   the note still applies, and one notice per error names its line. The tab shows them too.
-- **No note:** nothing is applied; one notice says so and names the command "Create the settings note from this
-  vault", which writes one: Obsidian's settings, core plugins and hotkeys that differ from their defaults, the
-  property types, and a block per installed plugin (its settings that differ from its defaults when those are known,
-  none otherwise).
+- **No note: the default is made.** At start (and when the "Settings note" setting points somewhere new), a vault
+  without the note gets the one bundled with the plugin (`src/vault-settings.md`: the author's setup, dated now),
+  with a notice. Nothing is applied yet: the run that follows asks as on a new device, listing the plugins to
+  install and what differs: "Apply and install", "Update the note from this vault" (its blocks take this vault's
+  values, keeping only what differs from the defaults) or "Not now". A note deleted while Obsidian runs isn't made
+  again until the next start (or the command "Apply the settings note now"); until then nothing is applied, with
+  one notice.
 - **Ignored keys:** `previousRelease` (a plugin's note of the last version it saw) is never taken into a block; a
   block's `ignore:` lists more. The note never holds this plugin's `setupNote` and `setupEnabled`: which note to
   read is each device's own.
@@ -129,12 +132,11 @@ a change is taken in), dated lines right below it, and new sections at the end.
 | Settings note                                            | The note's path (`Vault settings.md`, at the vault root), applied when you leave the field. Per device: never in the note. 0.1.2's default `_s/Vault settings.md`, saved in a `data.json`, is read as the new default. |
 
 Below them, **Status** says whether the vault matches the note (or what differs), what would be installed or
-removed, and which blocks aren't used, with "Apply now" and "Open the note" (or "Create from this vault" when there is
-no note). These settings are this plugin's `data.json`; when it changes on disk (another device, through sync) the
+removed, and which blocks aren't used, with "Apply now" and "Open the note" (or "Create from the default" when there is no note). These settings are this plugin's `data.json`; when it changes on disk (another device, through sync) the
 new settings are used at once. The first three can also be set in the note (`plugin: editor-defaults-archit`).
 
-**Commands:** Apply the settings note now · Show what differs from the settings note · Create the settings note from
-this vault · Update the settings note from this vault · Open the settings note.
+**Commands:** Apply the settings note now (also makes a missing note from the default) · Show what differs from the
+settings note · Update the settings note from this vault · Open the settings note.
 
 ## Working with other plugins
 
@@ -185,6 +187,8 @@ Numbered so `TEST-CASES.md` can cite them ("decision 3").
   note; anything else is put back. Installs and removals always ask.
 - **9. Only what differs from the defaults** is in the note: a setting set back to its default leaves it.
 - **10. The note's location is per device:** `setupNote` and `setupEnabled` are never in it.
+- **11. The plugin carries the default note** (`src/vault-settings.md`), so a vault without one starts from the
+  author's setup; changing the default means changing that file and releasing the plugin.
 
 ## Known limits
 
@@ -220,7 +224,8 @@ Numbered so `TEST-CASES.md` can cite them ("decision 3").
   unit-tested (`test/obsidian-stub.ts` stands in for `obsidian`). Patches of Obsidian methods use
   `monkey-around` and are registered with the plugin, so they come off on unload. The vault setup is in `src/setup/`: `note.ts` (the
   note's blocks as text), `model.ts` (the blocks checked and typed), `json.ts` (merge, diff, capture), `hotkeys.ts`,
-  all pure; `targets.ts` (where each kind of block lives in the vault), `setup.ts` (applying, watching, taking changes
+  all pure; `src/vault-settings.md` is the bundled default note (esbuild's text loader; vitest loads it the same way, and a
+  unit test checks it parses without errors); `targets.ts` (where each kind of block lives in the vault), `setup.ts` (applying, watching, taking changes
   in) and `modal.ts` use Obsidian. `styles.css` holds the date fields' picker layout and the status line.
 - **Internals:** every Obsidian internal used was checked against Obsidian 1.15.0's `app.js` and `app.css`.
   `minAppVersion` is 1.15.0. A new Obsidian version means re-checking them.

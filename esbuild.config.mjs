@@ -21,6 +21,8 @@ const ctx = await esbuild.context({
   // Not minified: readable stack traces in the dev console matter more than size for local plugins.
   sourcemap: watch ? "inline" : false,
   treeShaking: true,
+  // the bundled settings note (src/vault-settings.md) as a string
+  loader: { ".md": "text" },
   logLevel: "info",
 });
 if (watch) await ctx.watch();

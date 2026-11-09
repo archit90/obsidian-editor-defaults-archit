@@ -46,6 +46,7 @@ import {
   writeJsonFile,
 } from "./targets";
 import { SetupModal } from "./modal";
+import BUNDLED_NOTE from "../vault-settings.md";
 
 /** What the vault setup needs from the plugin. */
 export interface SetupHost {
@@ -111,6 +112,8 @@ export class VaultSetup {
   private defaultsStore: DefaultsStore = {};
   private communityRepos: Record<string, string> | null = null;
   private stopped = false;
+  /** The note was just made from the bundled one: the next run asks as on a new device. */
+  private justCreated = false;
 
   constructor(private host: SetupHost) {}
 
@@ -121,6 +124,7 @@ export class VaultSetup {
   async start() {
     this.defaultsStore = await this.loadDefaultsStore();
     this.watch();
+    await this.bootstrap();
     await this.run();
   }
 
@@ -134,7 +138,7 @@ export class VaultSetup {
     this.note = null;
   }
 
-  /** Applies the note now; with `ask`, also asks about installs and removals declined before. */
+  /** Applies the note now; with `ask`, also asks about installs and removals declined before (and makes a missing note). */
   run(ask = false): Promise<void> {
     const r = this.queue.then(() => this.runNow(ask));
     this.queue = r.catch(e => console.error("[editor-defaults] vault setup failed", e));
@@ -206,14 +210,15 @@ export class VaultSetup {
       this.status = { ...this.status, note: "off", errors: [], install: [], uninstall: [], differences: [] };
       return;
     }
+    if (ask) await this.bootstrap();
     this.note = await this.readNote();
     this.guard = new DriftGuard();
     if (!this.note) {
       this.status = { ...this.status, note: "missing", errors: [], install: [], uninstall: [], differences: [] };
       this.warnOnce(
-        "missing",
-        `Editor Defaults (Archit): there is no settings note at ${this.host.notePath()}. Create it with the command ` +
-          '"Create the settings note from this vault".',
+        `missing:${this.host.notePath()}`,
+        `Editor Defaults (Archit): there is no settings note at ${this.host.notePath()}; nothing is applied. It's ` +
+          'made from the default at the next start (or with the command "Apply the settings note now").',
       );
       return;
     }
@@ -225,7 +230,7 @@ export class VaultSetup {
     this.applying = true;
     try {
       const plan = await this.plan();
-      const firstRun = !this.app.loadLocalStorage(FIRST_RUN_KEY);
+      const firstRun = this.justCreated || !this.app.loadLocalStorage(FIRST_RUN_KEY);
       const needsAsk = plan.install.length || plan.uninstall.length || (firstRun && plan.differences.length);
       let choice: "apply" | "values" | "adopt" | "later" = "values";
       const askKey = JSON.stringify([plan.install.map(b => b.id), plan.uninstall.map(b => b.id), firstRun]);
@@ -242,9 +247,15 @@ export class VaultSetup {
           canAdopt: firstRun,
         }).choose();
         if (choice === "later") this.declined = askKey;
-        else this.app.saveLocalStorage(FIRST_RUN_KEY, true);
+        else {
+          this.app.saveLocalStorage(FIRST_RUN_KEY, true);
+          this.justCreated = false;
+        }
       } else if (needsAsk && firstRun) choice = "later";
-      else if (!needsAsk && firstRun) this.app.saveLocalStorage(FIRST_RUN_KEY, true);
+      else if (!needsAsk && firstRun) {
+        this.app.saveLocalStorage(FIRST_RUN_KEY, true);
+        this.justCreated = false;
+      }
       if (choice === "adopt") {
         await this.adoptVault();
       } else if (choice !== "later" || !firstRun) {
@@ -891,75 +902,25 @@ export class VaultSetup {
     }
   }
 
-  /** A new settings note from this vault: what differs from the defaults, and the installed plugins. */
-  async createNote(): Promise<TFile | null> {
-    if (this.noteFile()) return this.noteFile();
-    const sections: string[] = [];
-    const block = (heading: string, intro: string, value: JsonObject) =>
-      `## ${heading}\n\n${intro}\n\n\`\`\`vault-settings\n${stringifyYaml(value)}\`\`\`\n`;
-    const app = appTarget(this.app);
-    const appValues = withoutDefaults(await app.read(), app.defaults ?? {});
-    sections.push(
-      block("Obsidian", "Settings that differ from Obsidian's defaults.", { obsidian: "app", settings: appValues }),
-    );
-    const core = corePluginsTarget(this.app, this.isLoaded);
-    sections.push(
-      block("Core plugins", "Core plugins switched from Obsidian's default.", {
-        obsidian: "core-plugins",
-        settings: withoutDefaults(await core.read(), core.defaults ?? {}),
-      }),
-    );
-    const hk = hotkeysTarget(this.app, id => this.host.commandName(id));
-    sections.push(
-      block("Hotkeys", "Hotkeys that differ from the commands' defaults.", {
-        obsidian: "hotkeys",
-        settings: withoutDefaults(await hk.read(), hk.defaults ?? {}),
-      }),
-    );
-    const types = await propertyTypesTarget(this.app).read();
-    if (Object.keys(types).length)
-      sections.push(
-        block("Property types", "Types set for properties.", { obsidian: "property-types", settings: types }),
-      );
-    const pm = this.app.plugins;
-    for (const [id, m] of Object.entries(pm?.manifests ?? {})) {
-      if (!m) continue;
-      const t = this.target(`plugin:${id}`);
-      const data = t ? await t.read() : {};
-      const known = id === this.host.manifest.id ? this.host.ownDefaults() : this.defaultsStore[id]?.settings;
-      const settings = known ? withoutDefaults(data, known) : {};
-      for (const k of [...IGNORED_EVERYWHERE, ...(ALWAYS_IGNORED[id] ?? [])]) delete settings[k];
-      const source = await this.sourceOf(id);
-      const value = blockValue(
-        {
-          kind: "plugin",
-          id,
-          source,
-          state: pm?.enabledPlugins?.has(id) || id === this.host.manifest.id ? "enabled" : "disabled",
-          ignore: ALWAYS_IGNORED[id] ?? [],
-          at: { from: 0, to: 0, end: 0, yaml: "", heading: "", line: 0 },
-          settings: {},
-        },
-        settings,
-      );
-      const intro = known
-        ? "Settings that differ from the plugin's defaults."
-        : "Its defaults aren't known, so no settings were taken: settings changed in Settings from now on are added here.";
-      sections.push(block(m.name, intro, value));
-    }
-    const created = moment().format("YYYY-MM-DDTHH:mm:ss");
-    const text =
-      `---\ntype: system\ncreated: ${created}\n---\n\n# Vault settings\n\n` +
-      "What this vault's plugins and settings are, and why. Editor Defaults (Archit) applies the `vault-settings` " +
-      "blocks and writes changes made in Settings back into them; the text around them is yours.\n\n" +
-      sections.join("\n");
+  /**
+   * The vault has no settings note (at start, or after the setting moved it): it gets the one bundled with the plugin
+   * (src/vault-settings.md, the author's setup), dated now. Nothing is applied yet: the run that follows asks, as on a
+   * new device (apply it, or take this vault's values into it), and installs ask as always. Returns whether it was made.
+   */
+  async bootstrap(): Promise<boolean> {
+    if (this.stopped || !this.host.enabled() || this.noteFile()) return false;
     const path = this.host.notePath();
     const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    if (dir && !this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
-    const f = await this.app.vault.create(path, text);
-    this.app.saveLocalStorage(FIRST_RUN_KEY, true);
-    await this.run();
-    return f;
+    try {
+      if (dir && !this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
+      await this.app.vault.create(path, bundledNote(moment().format("YYYY-MM-DDTHH:mm:ss")));
+    } catch (e) {
+      console.error(`[editor-defaults] could not create the settings note at ${path}`, e);
+      return false;
+    }
+    this.justCreated = true;
+    new Notice(`Editor Defaults (Archit) created the settings note ${path} from its default.`, 8000);
+    return true;
   }
 
   /** Every block gets the vault's current values (the command "Update the settings note from this vault"). */
@@ -1061,4 +1022,9 @@ function asRecord(v: unknown): Record<string, unknown> | null {
 }
 function isPluginManifest(v: unknown): v is PluginManifest {
   return isRecord(v) && typeof v.id === "string" && typeof v.version === "string" && typeof v.name === "string";
+}
+
+/** The bundled settings note, with its `created` property set to `created`. */
+export function bundledNote(created: string): string {
+  return BUNDLED_NOTE.replace(/^created: .*$/m, `created: ${created}`);
 }

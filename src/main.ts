@@ -138,6 +138,7 @@ export default class EditorDefaultsPlugin extends Plugin {
     if (key === this.setupKey) return;
     this.setupKey = key;
     this.setup.forgetNote();
+    await this.setup.bootstrap();
     await this.setup.run();
   }
 
@@ -159,11 +160,6 @@ export default class EditorDefaultsPlugin extends Plugin {
     this.settings = next;
     await this.saveData(next);
     if (before.isoDates !== next.isoDates) this.rerenderDateFields();
-  }
-
-  async createSetupNote() {
-    const f = await this.setup.createNote();
-    if (f) await this.app.workspace.getLeaf(true).openFile(f);
   }
 
   async openSetupNote() {
@@ -195,11 +191,6 @@ export default class EditorDefaultsPlugin extends Plugin {
             lines.length ? 15000 : 4000,
           );
         }),
-    });
-    this.addCommand({
-      id: "create-settings-note",
-      name: "Create the settings note from this vault",
-      callback: () => void this.createSetupNote(),
     });
     this.addCommand({
       id: "update-settings-note",

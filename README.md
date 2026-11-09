@@ -29,7 +29,8 @@ settings:
 - A change you make in Settings is written into the note, dated; a setting set back to its default leaves the note.
   Any other change (a synced file, another plugin) is put back.
 - A new device asks once whether to apply the note or take this vault's values into it.
-- No note yet? The command "Create the settings note from this vault" writes one.
+- No note yet? The plugin creates its default one (my setup, bundled in the plugin) and asks before applying it:
+  apply it, or take this vault's values into it.
 
 **And three editor behaviours** (each can be turned off):
 

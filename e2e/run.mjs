@@ -1242,23 +1242,27 @@ T("S5", "A block for a core plugin's config file (canvas.json) is written to the
 });
 T(
   "S6",
-  "No settings note: the status says so; 'Create from this vault' writes one with what differs from the defaults",
+  "No settings note: the plugin's default is created, dated; the dialog asks, as on a new device; Not now changes nothing",
   async () => {
-    const other = "ed-made-settings.md"; // at the vault root, as the default note is
+    const other = "ed-boot-settings.md"; // at the vault root, as the default note is
+    const before = await cfg();
+    await ev(`const ed=${P}; ed.settings.setupNote=${JSON.stringify(other)}; void ed.saveSettings(); return 1`);
+    const dialog = await setupDialog(8000);
+    if (dialog) await dialogButton("Not now");
+    await sleep(1500);
     const r = await ev(
-      `const ed=${P}; ed.settings.setupNote=${JSON.stringify(other)}; await ed.saveSettings(); await E.sleep(300); const st=ed.setup.status.note; await ed.setup.createNote(); await E.sleep(800); const f=app.vault.getAbstractFileByPath(${JSON.stringify(other)}); const text=f? await app.vault.read(f) : ""; if (f) await app.vault.delete(f); return {st, text, modal: !!document.querySelector(".modal")}`,
+      `const f=app.vault.getAbstractFileByPath(${JSON.stringify(other)}); const text=f? await app.vault.read(f) : ""; if (f) await app.vault.delete(f); return {text: text.slice(0,200), templater: text.includes("plugin: templater-obsidian"), today: text.includes("created: "+window.moment().format("YYYY-MM-DD"))}`,
     );
+    const after = await cfg();
     await resetNote();
     return [
-      r.st === "missing" &&
-        !r.modal &&
-        /obsidian: app\nsettings:\n[\s\S]*newLinkFormat: absolute/.test(r.text) &&
-        /obsidian: hotkeys\nsettings:\n[\s\S]*app:go-back:/.test(r.text) &&
-        /plugin: editor-defaults-archit\nsource: (github:archit90\/obsidian-editor-defaults-archit|community)/.test(
-          r.text,
-        ) &&
-        !/trashOption: system/.test(r.text),
-      { st: r.st, modal: r.modal, text: r.text.slice(0, 900) },
+      r.templater &&
+        r.today &&
+        /Plugins to install/.test(dialog ?? "") &&
+        /Update the note from this vault/.test(dialog ?? "") &&
+        after.trash === before.trash &&
+        after.link === before.link,
+      { dialog: dialog?.slice(0, 300), ...r },
     ];
   },
 );
