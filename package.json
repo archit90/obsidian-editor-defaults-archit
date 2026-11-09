@@ -1,6 +1,6 @@
 {
   "name": "obsidian-editor-defaults-archit",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Sets up the vault from a settings note: installs its plugins, applies the settings that differ from the defaults (Obsidian's, core plugins, hotkeys, property types, each plugin's) and writes changes made in Settings back into the note. Also: [[path]] links without the |alias, full-path heading links, YYYY-MM-DD date properties.",
   "license": "MIT",
   "author": "Archit Gupta",
