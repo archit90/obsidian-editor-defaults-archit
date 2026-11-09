@@ -17,7 +17,7 @@ describe("parseSettings (data.json)", () => {
     expect(parseSettings({ stripAlias: "no", setupNote: 5, other: true })).toEqual(DEFAULTS);
     // an older version's settings (the enforce toggles) are ignored
     expect(parseSettings({ forceTrash: false, attachmentFolder: "u" })).toEqual(DEFAULTS);
-    // 0.1.2's default (in _s/) moves to the vault root
+    // an earlier build's default (in _s/) moves to the vault root
     expect(DEFAULTS.setupNote).toBe("Vault settings.md");
     expect(parseSettings({ setupNote: "_s/Vault settings.md" }).setupNote).toBe("Vault settings.md");
     // a note path must be a markdown file

@@ -123,13 +123,13 @@ a change is taken in), dated lines right below it, and new sections at the end.
 
 ## Settings
 
-| Setting                                                  | Effect                                                                                                                                                                                                                 |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Insert `[[path]]` without alias                          | The first behaviour above. On by default.                                                                                                                                                                              |
-| Heading and block links use the path from the vault root | The second. On by default.                                                                                                                                                                                             |
-| Dates in properties as YYYY-MM-DD                        | The third. On by default.                                                                                                                                                                                              |
-| Set up the vault from the settings note                  | The vault setup. On by default; off, nothing is applied or taken in.                                                                                                                                                   |
-| Settings note                                            | The note's path (`Vault settings.md`, at the vault root), applied when you leave the field. Per device: never in the note. 0.1.2's default `_s/Vault settings.md`, saved in a `data.json`, is read as the new default. |
+| Setting                                                  | Effect                                                                                                                                                                                                                            |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Insert `[[path]]` without alias                          | The first behaviour above. On by default.                                                                                                                                                                                         |
+| Heading and block links use the path from the vault root | The second. On by default.                                                                                                                                                                                                        |
+| Dates in properties as YYYY-MM-DD                        | The third. On by default.                                                                                                                                                                                                         |
+| Set up the vault from the settings note                  | The vault setup. On by default; off, nothing is applied or taken in.                                                                                                                                                              |
+| Settings note                                            | The note's path (`Vault settings.md`, at the vault root), applied when you leave the field. Per device: never in the note. An earlier build's default `_s/Vault settings.md`, saved in a `data.json`, is read as the new default. |
 
 Below them, **Status** says whether the vault matches the note (or what differs), what would be installed or
 removed, and which blocks aren't used, with "Apply now" and "Open the note" (or "Create from the default" when there is no note). These settings are this plugin's `data.json`; when it changes on disk (another device, through sync) the
@@ -229,7 +229,7 @@ Numbered so `TEST-CASES.md` can cite them ("decision 3").
   in) and `modal.ts` use Obsidian. `styles.css` holds the date fields' picker layout and the status line.
 - **Internals:** every Obsidian internal used was checked against Obsidian 1.15.0's `app.js` and `app.css`.
   `minAppVersion` is 1.15.0. A new Obsidian version means re-checking them.
-- **Versions and releases:** the version is 0.1.1, and releases bump the patch version only (0.1.1 → 0.1.2 …);
+- **Versions and releases:** the version is 0.1.0, and releases bump the patch version only (0.1.0 → 0.1.1 …);
   the minor and major stay. `npm run release` (= `npm version patch`) bumps `package.json`, then
   `scripts/version-bump.mjs` copies the version into `manifest.json` and `versions.json`; npm commits and tags it
   (tag = the version, no `v`, `.npmrc`). `scripts/version-bump.mjs` refuses a new minor or major version (and puts

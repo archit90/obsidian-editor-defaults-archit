@@ -10,7 +10,7 @@ export interface Settings {
 }
 
 export const DEFAULT_NOTE = "Vault settings.md";
-/** 0.1.2's default, in a system folder: a data.json that saved it moves to the vault root with the default. */
+/** An earlier build's default, in a system folder: a data.json that saved it moves to the vault root with the default. */
 const OLD_DEFAULT_NOTE = "_s/Vault settings.md";
 
 export const DEFAULTS: Settings = {

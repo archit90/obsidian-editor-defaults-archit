@@ -291,19 +291,23 @@ T(
   },
   { unless: TEMPLATER },
 );
-T("A7", "An older data.json (0.1.1's enforce toggles) is read without them; its other settings stay", async () => {
-  const r = await ev(
-    `const p=${P}; const d=await p.loadData(); await p.saveData({forceTrash:false, attachmentFolder:"x", stripAlias:false, setupNote:d.setupNote}); await app.plugins.disablePlugin(${JSON.stringify(PLUGIN_ID)}); await app.plugins.enablePlugin(${JSON.stringify(PLUGIN_ID)}); await E.sleep(1500); const s={...${P}.settings}; await ${P}.saveData(d ?? {}); await app.plugins.disablePlugin(${JSON.stringify(PLUGIN_ID)}); await app.plugins.enablePlugin(${JSON.stringify(PLUGIN_ID)}); await E.sleep(1500); return s`,
-  );
-  return [
-    r.stripAlias === false &&
-      r.isoDates === true &&
-      !("forceTrash" in r) &&
-      !("attachmentFolder" in r) &&
-      r.setupEnabled,
-    r,
-  ];
-});
+T(
+  "A7",
+  "An older data.json (an earlier build's enforce toggles) is read without them; its other settings stay",
+  async () => {
+    const r = await ev(
+      `const p=${P}; const d=await p.loadData(); await p.saveData({forceTrash:false, attachmentFolder:"x", stripAlias:false, setupNote:d.setupNote}); await app.plugins.disablePlugin(${JSON.stringify(PLUGIN_ID)}); await app.plugins.enablePlugin(${JSON.stringify(PLUGIN_ID)}); await E.sleep(1500); const s={...${P}.settings}; await ${P}.saveData(d ?? {}); await app.plugins.disablePlugin(${JSON.stringify(PLUGIN_ID)}); await app.plugins.enablePlugin(${JSON.stringify(PLUGIN_ID)}); await E.sleep(1500); return s`,
+    );
+    return [
+      r.stripAlias === false &&
+        r.isoDates === true &&
+        !("forceTrash" in r) &&
+        !("attachmentFolder" in r) &&
+        r.setupEnabled,
+      r,
+    ];
+  },
+);
 T("A8", "The plugin's settings changed on disk (another device, through sync) are used at once", async () => {
   const r = await ev(
     `const fs=require("fs"), file=app.vault.adapter.basePath+"/"+${P}.manifest.dir+"/data.json"; const before=fs.readFileSync(file,"utf8"); const cur={...${P}.settings}; fs.writeFileSync(file, JSON.stringify({...cur, stripAlias:false}, null, 2)); for (let i=0; i<40 && ${P}.settings.stripAlias; i++) await E.sleep(250); const off=${P}.settings.stripAlias; fs.writeFileSync(file, before); for (let i=0; i<40 && !${P}.settings.stripAlias; i++) await E.sleep(250); return {off, on: ${P}.settings.stripAlias}`,

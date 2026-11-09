@@ -54,7 +54,7 @@ npm run check                    # format, lint, typecheck, unit tests, build, s
 npm run deploy -- <vault> …      # build and copy into vaults that have the plugin installed (--install adds it)
 ```
 
-Releasing: `npm run release` bumps the patch version only (0.1.1 → 0.1.2 …) in `package.json`, `manifest.json`
+Releasing: `npm run release` bumps the patch version only (0.1.0 → 0.1.1 …) in `package.json`, `manifest.json`
 and `versions.json` and tags the commit with it; `git push --follow-tags` then runs the release workflow, which
 checks, builds and publishes the GitHub release BRAT installs from. A new minor or major version is a deliberate
 choice: `ALLOW_MINOR_BUMP=1 npm version minor`.
