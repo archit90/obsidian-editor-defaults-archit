@@ -40,6 +40,12 @@ settings:
 
 `SPEC.md` has the details: the block kinds, the rules, the limits.
 
+## Sample vault
+
+`sample-vaults/sample-vault.zip` is a new vault of my note system, with one sample note of each kind and only this
+plugin installed. Unzip it and open "Sample vault" in Obsidian: after you trust its plugins, this plugin writes its
+`Vault settings.md`, offers to install the other plugins and applies their settings.
+
 ## Install with BRAT
 
 BRAT → **Add beta plugin** → `archit90/obsidian-editor-defaults-archit` → Add plugin, then enable **Editor Defaults (Archit)** in Community plugins.
