@@ -10,10 +10,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { assertSandboxVault, connect } from "./cdp.mjs";
-import { PATHS } from "./fixtures.mjs";
+import { PATHS, WANT } from "./fixtures.mjs";
 
 const [what, flag] = process.argv.slice(2);
-const D = JSON.parse(fs.readFileSync(new URL("../src/defaults.json", import.meta.url), "utf8"));
+const D = WANT;
 const A1_NOTE = `${PATHS.tabFolder}a1.md`;
 const A1_BASE = `${PATHS.tabFolder}a1.base`;
 const A1_ROW = `${PATHS.tabFolder}a1-row.md`;
@@ -54,6 +54,17 @@ if (what === "prepare") {
   process.exit(0);
 }
 
+// a fresh vault: the first load asks once (this device hasn't been set up from the note); Apply the note
+let dialog = null;
+if (flag === "--dialog") {
+  for (let i = 0; i < 40 && !dialog; i++) {
+    dialog = await ev(
+      `const m=[...document.querySelectorAll(".modal")].find(m=>/Set up this vault/.test(m.innerText)); if(!m) return null; const t=m.innerText; [...m.querySelectorAll("button")].find(b=>b.innerText==="Apply the note")?.click(); return t`,
+    );
+    if (!dialog) await new Promise(r => setTimeout(r, 250));
+  }
+  await new Promise(r => setTimeout(r, 2500));
+}
 const read = f => {
   const p = path.join(vault, ".obsidian", f);
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : {};
@@ -92,8 +103,16 @@ const okRestored =
   (restored.note === "text:2026-09-10 09:30:00" &&
     restored.baseDeferred === true &&
     JSON.stringify(restored.base) === JSON.stringify(["text:2026-09-10 09:30:00", "text:2026-11-06"]));
-const pass = Object.values(disk).every(Boolean) && loud.length === 0 && mine.length === 0 && okRestored;
-console.log(`${pass ? "PASS" : "FAIL"} ${what}`, JSON.stringify({ disk, notices: loud, errors: mine, restored }));
+const pass =
+  Object.values(disk).every(Boolean) &&
+  loud.length === 0 &&
+  mine.length === 0 &&
+  okRestored &&
+  (flag !== "--dialog" || /Deleted files/.test(dialog ?? ""));
+console.log(
+  `${pass ? "PASS" : "FAIL"} ${what}`,
+  JSON.stringify({ disk, notices: loud, errors: mine, restored, dialog: dialog?.slice(0, 200) ?? null }),
+);
 if (errors.length > mine.length)
   console.log(
     "other console errors:",

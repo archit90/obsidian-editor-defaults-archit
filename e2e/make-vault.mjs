@@ -1,13 +1,14 @@
 // Run by e2e/sandbox.sh once it has made a sandbox's vault, before Obsidian starts: `node e2e/make-vault.mjs <vault>`.
 // Writes the suite's fixtures (e2e/fixtures.mjs) on disk. Idempotent; in a copy of another vault (OBS_VAULT) it only
 // adds or refreshes the suite's own paths and property types, and never rewrites anything else.
-// - the fixture notes, and the types of their properties in .obsidian/types.json;
+// - the fixture notes (the suite's settings note among them), and the types of their properties in .obsidian/types.json;
+// - Editor Defaults (Archit)'s settings: the suite's settings note (SETTINGS_NOTE);
 // - Templater, when it's installed in the vault without settings: its templates folder is the suite's
 //   (_test/ed-templates). A vault whose Templater has settings keeps them, and gets the suite's template in its
 //   templates folder as well.
 import fs from "node:fs";
 import path from "node:path";
-import { NOTES, PATHS, TYPES } from "./fixtures.mjs";
+import { NOTES, PATHS, SETTINGS_NOTE, TYPES } from "./fixtures.mjs";
 
 const vault = process.argv[2];
 if (!vault || !fs.existsSync(path.join(vault, ".obsidian"))) {
@@ -44,4 +45,12 @@ if (fs.existsSync(path.join(templater, "manifest.json"))) {
   )
     put(`${data.templates_folder}/${path.basename(PATHS.template)}`, NOTES[PATHS.template]);
 }
+// Editor Defaults (Archit) reads the suite's settings note (its other settings are kept)
+const own = path.join(vault, ".obsidian", "plugins", "editor-defaults-archit");
+fs.mkdirSync(own, { recursive: true });
+const ownFile = path.join(own, "data.json");
+fs.writeFileSync(
+  ownFile,
+  JSON.stringify({ ...readJson(ownFile, {}), setupNote: SETTINGS_NOTE, setupEnabled: true }, null, 2),
+);
 console.log(`fixtures in ${vault}`);

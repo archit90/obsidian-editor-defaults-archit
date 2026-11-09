@@ -1,4 +1,5 @@
 import momentLib from "moment";
+import YAML from "yaml";
 
 // Minimal runtime stand-in for the `obsidian` module in unit tests. Only what the tested modules touch at
 // import time or call; the plugins' UI code isn't unit-tested (it's checked in the app, see each README).
@@ -54,11 +55,12 @@ export function debounce<A extends unknown[]>(fn: (...a: A) => unknown) {
   return d;
 }
 export function setIcon() {}
+// Obsidian's parseYaml / stringifyYaml are YAML 1.2 (js-yaml); the yaml package reads and writes the same
 export function parseYaml(s: string): unknown {
-  return JSON.parse(s);
+  return YAML.parse(s);
 }
 export function stringifyYaml(v: unknown): string {
-  return JSON.stringify(v);
+  return YAML.stringify(v);
 }
 // Obsidian re-exports moment; it's installed here as obsidian's dependency
 export const moment = momentLib;

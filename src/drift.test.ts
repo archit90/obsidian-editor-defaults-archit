@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { DriftGuard, ENFORCED_CONFIG, revertNotice, stoppedNotice } from "./drift";
+import { DriftGuard } from "./drift";
 
 describe("DriftGuard", () => {
   it("allows a few reverts of one item, then stops while they keep coming, then allows again", () => {
@@ -47,30 +47,5 @@ describe("DriftGuard", () => {
     expect(g.retryAt("a", 500_000)).toBeNull();
     expect(g.allow("b", 8000)).toBe(true);
     warn.mockRestore();
-  });
-});
-
-describe("enforced config keys", () => {
-  it("are the three Files and links settings", () => {
-    expect([...ENFORCED_CONFIG].sort()).toEqual(["attachmentFolderPath", "newLinkFormat", "trashOption"]);
-  });
-});
-
-describe("notices", () => {
-  it("name what was put back and each setting once", () => {
-    expect(revertNotice(["A"], ["S"])).toBe(
-      'Editor Defaults (Archit) put back A.\nTo change this, first turn off "S" in the Editor Defaults (Archit) settings.',
-    );
-    expect(revertNotice(["A", "B", "C"], ["S", "T", "S"])).toBe(
-      'Editor Defaults (Archit) put back A, B and C.\nTo change these, first turn off "S" and "T" in the Editor Defaults (Archit) settings.',
-    );
-  });
-  it("say once what was stopped, why, and until when", () => {
-    expect(stoppedNotice(["core plugin Backlinks"])).toBe(
-      "Editor Defaults (Archit) stopped putting back core plugin Backlinks: it keeps being changed again, by another " +
-        "plugin or another device (maybe one with a different version of Editor Defaults (Archit) or other settings). " +
-        "It's enforced again after Obsidian restarts or its setting changes.",
-    );
-    expect(stoppedNotice(["A", "B"])).toMatch(/^Editor Defaults \(Archit\) stopped putting back A and B: they keep /);
   });
 });

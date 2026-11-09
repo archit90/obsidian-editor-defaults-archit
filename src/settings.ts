@@ -1,55 +1,38 @@
-import { App, Platform, PluginSettingTab, Setting } from "obsidian";
-import { corePluginsDescription, ENFORCED, hotkeysDescription } from "./defaults";
+import { App, PluginSettingTab, Setting } from "obsidian";
 import type EditorDefaultsPlugin from "./main";
 
 export interface Settings {
-  forceRootPaths: boolean; // set "New link format" to "Absolute path in vault"
+  forceRootPaths: boolean; // heading and block links picked from [[ get the path from the vault root
   stripAlias: boolean; // drop the |alias the dropdown appends
-  forceAttachments: boolean; // set "Default location for new attachments" to a folder
-  attachmentFolder: string;
-  forceTrash: boolean; // set "Deleted files" to "Move to Obsidian trash (.trash folder)"
-  forceCorePlugins: boolean; // enable/disable the core plugins in defaults.json
-  forceHotkeys: boolean; // set the hotkeys in defaults.json
   isoDates: boolean; // Date / Date & time properties as YYYY-MM-DD text, not the locale-formatted picker
+  setupEnabled: boolean; // apply the settings note to the vault and take Settings changes into it
+  setupNote: string; // the settings note's path
 }
+
+export const DEFAULT_NOTE = "_s/Vault settings.md";
 
 export const DEFAULTS: Settings = {
   forceRootPaths: true,
   stripAlias: true,
-  forceAttachments: true,
-  attachmentFolder: ENFORCED.attachmentFolder,
-  forceTrash: true,
-  forceCorePlugins: true,
-  forceHotkeys: true,
   isoDates: true,
+  setupEnabled: true,
+  setupNote: DEFAULT_NOTE,
 };
 
-/** Each setting's name in the settings tab (also used in the notice when a default is put back). */
+/** Each setting's name in the settings tab. */
 export const SETTING_NAMES: Record<keyof Settings, string> = {
-  forceRootPaths: "New links use path from vault root",
+  forceRootPaths: "Heading and block links use the path from the vault root",
   stripAlias: "Insert [[path]] without alias",
-  forceAttachments: "Keep attachments in one folder",
-  attachmentFolder: "Attachment folder",
-  forceTrash: "Deleted files go to the Obsidian trash",
-  forceCorePlugins: "Enforce core plugins",
-  forceHotkeys: "Enforce hotkeys",
   isoDates: "Dates in properties as YYYY-MM-DD (date & time with seconds)",
+  setupEnabled: "Set up the vault from the settings note",
+  setupNote: "Settings note",
 };
 
 export type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
 
-/** The on/off settings. */
-const BOOL_KEYS: BoolKey[] = [
-  "forceRootPaths",
-  "stripAlias",
-  "forceAttachments",
-  "forceTrash",
-  "forceCorePlugins",
-  "forceHotkeys",
-  "isoDates",
-];
+const BOOL_KEYS: BoolKey[] = ["forceRootPaths", "stripAlias", "isoDates", "setupEnabled"];
 
-/** The saved settings (data.json) over the defaults: unknown keys and values of the wrong type are ignored. */
+/** The saved settings (data.json) over the defaults: unknown keys (an older version's too) and wrong types are ignored. */
 export function parseSettings(raw: unknown): Settings {
   const out: Settings = { ...DEFAULTS };
   if (typeof raw !== "object" || raw === null) return out;
@@ -58,16 +41,16 @@ export function parseSettings(raw: unknown): Settings {
     const v = get(key);
     if (typeof v === "boolean") out[key] = v;
   }
-  const folder = get("attachmentFolder");
-  if (typeof folder === "string") out.attachmentFolder = folder;
+  const note = get("setupNote");
+  if (typeof note === "string" && note.trim().endsWith(".md")) out.setupNote = note.trim();
   return out;
 }
 
 const logError = (e: unknown) => console.error("[editor-defaults] could not save the settings", e);
 
 export class EditorDefaultsTab extends PluginSettingTab {
-  /** The attachment folder as typed: applied when the field loses focus or the tab closes, never half-typed. */
-  private folderDraft: string | null = null;
+  /** The note path as typed: applied when the field loses focus or the tab closes, never half-typed. */
+  private noteDraft: string | null = null;
 
   constructor(
     app: App,
@@ -89,55 +72,85 @@ export class EditorDefaultsTab extends PluginSettingTab {
       );
   }
 
-  /** Applies the attachment folder being typed, trimmed, if it changed. */
-  private commitFolder() {
-    const draft = this.folderDraft?.trim();
-    this.folderDraft = null;
-    if (draft === undefined || draft === this.plugin.settings.attachmentFolder) return;
-    this.plugin.settings.attachmentFolder = draft;
+  private commitNote() {
+    const draft = this.noteDraft?.trim();
+    this.noteDraft = null;
+    if (!draft || draft === this.plugin.settings.setupNote || !draft.endsWith(".md")) return;
+    this.plugin.settings.setupNote = draft;
     this.plugin.saveSettings().catch(logError);
   }
 
   override hide() {
-    this.commitFolder();
+    this.commitNote();
     super.hide();
   }
 
   override display() {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("p", {
-      cls: "setting-item-description",
-      text: "While one of these is on, Editor Defaults (Archit) puts its value back whenever it changes: in Obsidian's settings, from another device, or by another plugin. Turn it off here to change that value yourself.",
-    });
-
-    this.toggle(
-      'Keeps "New link format" set to "Absolute path in vault". Heading and block links picked from the [[ dropdown get the full path too.',
-      "forceRootPaths",
-    );
     this.toggle(
       "Picking a note from the [[ dropdown inserts only the link target, not [[path|name]]. Works with absolute and relative link formats, in notes and in properties.",
       "stripAlias",
     );
-    this.toggle('Keeps "Default location for new attachments" set to the folder below.', "forceAttachments");
-    new Setting(containerEl)
-      .setName(SETTING_NAMES.attachmentFolder)
-      .setDesc("Path from the vault root. Applied when you leave the field.")
-      .addText(t => {
-        t.setValue(this.folderDraft ?? this.plugin.settings.attachmentFolder).onChange(v => {
-          this.folderDraft = v;
-        });
-        t.inputEl.addEventListener("blur", () => this.commitFolder());
-      });
-    this.toggle('Keeps "Deleted files" set to "Move to Obsidian trash (.trash folder)".', "forceTrash");
-    this.toggle(corePluginsDescription(), "forceCorePlugins");
     this.toggle(
-      `${hotkeysDescription(Platform.isMacOS || Platform.isIosApp)} A hotkey for a plugin that isn't installed is saved and works once it is.`,
-      "forceHotkeys",
+      'While "New link format" is "Absolute path in vault", heading and block links picked from the [[ dropdown get the full path too.',
+      "forceRootPaths",
     );
     this.toggle(
       "Date and Date & time properties show and take YYYY-MM-DD (date & time: YYYY-MM-DD HH:mm:ss) instead of your system's date format; the calendar button still opens a date picker.",
       "isoDates",
     );
+
+    new Setting(containerEl).setName("Vault setup").setHeading();
+    containerEl.createEl("p", {
+      cls: "setting-item-description",
+      text:
+        "The settings note lists this vault's plugins (where they come from, whether they're on) and the settings " +
+        "that differ from the defaults: Obsidian's, the core plugins', the hotkeys, the property types and each " +
+        "plugin's. Editor Defaults (Archit) applies it at start and whenever it changes. A change you make in " +
+        "Settings is written into the note; a change made any other way (a synced file, another plugin) is put " +
+        "back. Installing or removing a plugin always asks first.",
+    });
+    this.toggle("Apply the settings note and keep it up to date.", "setupEnabled");
+    new Setting(containerEl)
+      .setName(SETTING_NAMES.setupNote)
+      .setDesc("Path from the vault root. Applied when you leave the field.")
+      .addText(t => {
+        t.setValue(this.noteDraft ?? this.plugin.settings.setupNote).onChange(v => {
+          this.noteDraft = v;
+        });
+        t.inputEl.addEventListener("blur", () => this.commitNote());
+      });
+    const st = this.plugin.setup.status;
+    const status = new Setting(containerEl).setName("Status");
+    const lines: string[] = [];
+    if (st.note === "off") lines.push("Off.");
+    else if (st.note === "missing") lines.push(`There is no note at ${this.plugin.settings.setupNote}.`);
+    else {
+      const d = st.differences;
+      lines.push(
+        d.length
+          ? `The vault differs from the note in ${d.length}: ${d.slice(0, 5).join("; ")}${d.length > 5 ? "…" : ""}`
+          : "The vault matches the note.",
+      );
+      if (st.install.length) lines.push(`To install: ${st.install.join(", ")}.`);
+      if (st.uninstall.length) lines.push(`To remove: ${st.uninstall.join(", ")}.`);
+      for (const e of st.errors) lines.push(`Block at line ${e.at.line} isn't used: ${e.message}`);
+    }
+    status.setDesc(lines.join("\n"));
+    status.descEl.addClass("editor-defaults-status");
+    if (st.note === "missing")
+      status.addButton(b =>
+        b
+          .setButtonText("Create from this vault")
+          .setCta()
+          .onClick(() => void this.plugin.createSetupNote().then(() => this.display())),
+      );
+    else if (st.note === "ok") {
+      status.addButton(b =>
+        b.setButtonText("Apply now").onClick(() => void this.plugin.setup.run(true).then(() => this.display())),
+      );
+      status.addButton(b => b.setButtonText("Open the note").onClick(() => void this.plugin.openSetupNote()));
+    }
   }
 }

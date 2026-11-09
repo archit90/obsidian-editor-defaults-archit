@@ -3,17 +3,17 @@
 // page helpers below as window.__ed.
 import fs from "node:fs";
 import { assertSandboxVault, connect } from "./cdp.mjs";
-import { NOTES, PATHS, TYPES } from "./fixtures.mjs";
+import { NOTES, PATHS, SETTINGS_NOTE, SETTINGS_TEXT, TYPES, WANT } from "./fixtures.mjs";
 
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/** What the plugin enforces: the file the plugin itself reads. */
-export const DEFAULTS = JSON.parse(fs.readFileSync(new URL("../src/defaults.json", import.meta.url), "utf8"));
+/** What the suite's settings note (fixtures.mjs) sets, as the cases check it. */
+export const DEFAULTS = WANT;
 export const PLUGIN_ID = JSON.parse(fs.readFileSync(new URL("../manifest.json", import.meta.url), "utf8")).id;
 
 /** The page side (window.__ed), evaluated in Obsidian with the fixtures and defaults in `ctx`. */
 function page(ctx) {
-  const { NOTES, PATHS, TYPES, DEFAULTS } = ctx;
+  const { NOTES, PATHS, TYPES, DEFAULTS, SETTINGS_NOTE, SETTINGS_TEXT, PLUGIN_ID } = ctx;
   const old = window.__ed;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const E = (window.__ed = {
@@ -40,13 +40,55 @@ function page(ctx) {
       if ((await app.vault.read(f)) !== text) await app.vault.modify(f, text);
       return f;
     },
+    /** Editor Defaults (Archit). */
+    ed() {
+      return app.plugins.plugins[PLUGIN_ID];
+    },
+    /** The suite's settings note as it is now. */
+    async note() {
+      const f = app.vault.getAbstractFileByPath(SETTINGS_NOTE);
+      return f ? app.vault.read(f) : null;
+    },
+    /**
+     * The settings note as the suite wrote it, applied: the plugin reads it (its setting), this device counts as set
+     * up (no first-run dialog), and the vault holds its values. Waits until the plugin is done.
+     */
+    async resetNote() {
+      const ed = E.ed();
+      if (ed.settings.setupNote !== SETTINGS_NOTE || !ed.settings.setupEnabled) {
+        ed.settings.setupNote = SETTINGS_NOTE;
+        ed.settings.setupEnabled = true;
+        await ed.saveData(ed.settings);
+      }
+      app.saveLocalStorage("editor-defaults-archit:setup-applied", true);
+      await E.file(SETTINGS_NOTE, SETTINGS_TEXT);
+      await E.sleep(1300);
+      // a setup dialog still waiting (a fresh vault's first run, which this replaces) holds the setup's queue
+      let done = false;
+      const run = ed.setup.run().then(() => (done = true));
+      for (let i = 0; i < 600 && !done; i++) {
+        for (const m of document.querySelectorAll(".modal"))
+          if (/Set up this vault/.test(m.innerText))
+            [...m.querySelectorAll("button")].find(b => b.innerText === "Not now")?.click();
+        await E.sleep(100);
+      }
+      await run;
+      if (!done) throw new Error("the vault setup didn't finish");
+      await ed.setup.run();
+      await E.sleep(400);
+      return 1;
+    },
     /** The fixtures (fixtures.mjs) and the core plugins the cases use, whatever the vault: idempotent. */
     async prepare() {
+      document.querySelectorAll(".modal-container").forEach(m => m.querySelector(".modal-close-button")?.click());
       for (const [p, text] of Object.entries(NOTES)) await E.file(p, text);
       await E.folder(PATHS.tabFolder);
       await E.folder(PATHS.newNotes);
       const m = app.metadataTypeManager;
       for (const [k, t] of Object.entries(TYPES)) if (m.getAssignedWidget(k) !== t) await m.setType(k, t);
+      // after the types: setting one counts as a change by a person, which the note would take in
+      await E.sleep(3200);
+      await E.resetNote();
       for (const id of ["canvas", "properties", "file-explorer"]) {
         const p = app.internalPlugins.plugins[id];
         if (p && !p.enabled) {
@@ -211,7 +253,7 @@ function page(ctx) {
     suggestOpen() {
       return !!app.workspace.editorSuggest.currentSuggest;
     },
-    /** The vault's state for everything Editor Defaults enforces (defaults.json), and the loaded plugins. */
+    /** The vault's state for everything the suite's settings note sets, and the loaded plugins. */
     cfg() {
       return {
         link: app.vault.getConfig("newLinkFormat"),
@@ -237,7 +279,9 @@ function page(ctx) {
 export async function setup(port = process.env.CDP_PORT) {
   const c = await connect(port || undefined);
   await assertSandboxVault(c);
-  await c.ev(`(${page.toString()})(${JSON.stringify({ NOTES, PATHS, TYPES, DEFAULTS })})`);
+  await c.ev(
+    `(${page.toString()})(${JSON.stringify({ NOTES, PATHS, TYPES, DEFAULTS, SETTINGS_NOTE, SETTINGS_TEXT, PLUGIN_ID })})`,
+  );
   c.ev2 = body => c.ev(`(async()=>{const E=window.__ed; ${body}})()`);
   c.click = async (x, y) => {
     await c.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });

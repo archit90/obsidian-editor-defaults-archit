@@ -1,7 +1,7 @@
 {
   "name": "obsidian-editor-defaults-archit",
   "version": "0.1.1",
-  "description": "Enforces vault defaults on every device, on load and whenever they drift: links use the full path from the vault root without a |alias, attachments go to one folder, deleted files go to the Obsidian trash, core plugins and hotkeys are set, and date properties show as YYYY-MM-DD.",
+  "description": "Sets up the vault from a settings note: installs its plugins, applies the settings that differ from the defaults (Obsidian's, core plugins, hotkeys, property types, each plugin's) and writes changes made in Settings back into the note. Also: [[path]] links without the |alias, full-path heading links, YYYY-MM-DD date properties.",
   "license": "MIT",
   "author": "Archit Gupta",
   "repository": {
@@ -46,6 +46,7 @@
     "tslib": "^2.8.1",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.72.1",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "yaml": "^2.8.1"
   }
 }

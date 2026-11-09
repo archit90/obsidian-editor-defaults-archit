@@ -1,8 +1,3 @@
-import { CONFIG_RULES, list } from "./defaults";
-
-/** The vault config keys Editor Defaults keeps (Settings → Files and links). */
-export const ENFORCED_CONFIG: ReadonlySet<string> = new Set(CONFIG_RULES.map(r => r.key));
-
 /**
  * Stops putting one default back when something keeps changing it again (another plugin, or another device with a
  * different version of Editor Defaults or different settings, would otherwise fight it forever). Per item:
@@ -61,22 +56,4 @@ export class DriftGuard {
     this.newlyStopped = [];
     return out;
   }
-}
-
-/** The notice shown after defaults were put back: what they are now, and which settings to turn off to change them. */
-export function revertNotice(whats: string[], settingNames: string[]): string {
-  const names = [...new Set(settingNames)].map(n => `"${n}"`);
-  return (
-    `Editor Defaults (Archit) put back ${list(whats)}.\n` +
-    `To change ${whats.length > 1 ? "these" : "this"}, first turn off ${list(names)} in the Editor Defaults (Archit) settings.`
-  );
-}
-
-/** The notice shown once when items are stopped for the session (DriftGuard). */
-export function stoppedNotice(whats: string[]): string {
-  return (
-    `Editor Defaults (Archit) stopped putting back ${list(whats)}: ${whats.length > 1 ? "they keep" : "it keeps"} ` +
-    "being changed again, by another plugin or another device (maybe one with a different version of Editor " +
-    "Defaults (Archit) or other settings). It's enforced again after Obsidian restarts or its setting changes."
-  );
 }

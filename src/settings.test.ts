@@ -6,15 +6,19 @@ describe("parseSettings (data.json)", () => {
     for (const raw of [null, undefined, "x", 3, []]) expect(parseSettings(raw)).toEqual(DEFAULTS);
   });
   it("takes the saved values over the defaults (an older data.json with fewer keys)", () => {
-    expect(parseSettings({ forceTrash: false })).toEqual({ ...DEFAULTS, forceTrash: false });
-    expect(parseSettings({ attachmentFolder: "assets", isoDates: false })).toEqual({
+    expect(parseSettings({ stripAlias: false })).toEqual({ ...DEFAULTS, stripAlias: false });
+    expect(parseSettings({ setupNote: "x/Setup.md", isoDates: false })).toEqual({
       ...DEFAULTS,
-      attachmentFolder: "assets",
+      setupNote: "x/Setup.md",
       isoDates: false,
     });
   });
   it("ignores unknown keys and values of the wrong type", () => {
-    expect(parseSettings({ forceTrash: "no", attachmentFolder: 5, other: true })).toEqual(DEFAULTS);
+    expect(parseSettings({ stripAlias: "no", setupNote: 5, other: true })).toEqual(DEFAULTS);
+    // an older version's settings (the enforce toggles) are ignored
+    expect(parseSettings({ forceTrash: false, attachmentFolder: "u" })).toEqual(DEFAULTS);
+    // a note path must be a markdown file
+    expect(parseSettings({ setupNote: "x/Setup" }).setupNote).toBe(DEFAULTS.setupNote);
   });
 });
 

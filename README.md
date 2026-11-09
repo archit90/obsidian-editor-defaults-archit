@@ -1,32 +1,43 @@
 # Editor Defaults (Archit)
 
 > **This is a personal plugin.** It enforces the conventions of my own vaults and is published only so I can
-> install it with BRAT on my devices. Its defaults are hard-coded for my setup (attachment folder `u`, my core
-> plugins and hotkeys), so it's unlikely to be useful to anyone else, and I don't take feature requests for it.
+> install it with BRAT on my devices. It's built around my own setup and note system, so it may not suit
+> anyone else, and I don't take feature requests for it.
 
-It enforces a set of vault settings on every device, at start and whenever they drift (for example after a
-sync brings in another device's settings), with a notice naming the setting to turn off when you want to
-change one. Each item can be turned off:
+It does two things.
 
-- New links use the path from the vault root, and picking a note from `[[` inserts `[[path]]` without
-  Obsidian's `|name` alias.
-- Attachments go to one folder (`u`).
-- Deleted files go to the Obsidian trash.
-- Core plugins: Bases on, Unique note creator off; Templates off while Templater is enabled, and Backlinks off while
-  Backlinks Full View is enabled (they replace them).
-- A fixed set of hotkeys (navigate back / forward, Templater).
+**It sets up the vault from a settings note** (`_s/Vault settings.md`): which plugins the vault has, where each comes
+from, whether it's on, and every setting that differs from its default (Obsidian's, the core plugins', the hotkeys,
+the property types and each plugin's), with the reasons written around them. The values are in fenced blocks:
+
+````markdown
+## Templater
+
+Templates live in `_t/`.
+
+```vault-settings
+plugin: templater-obsidian
+source: community
+settings:
+  templates_folder: _t
+```
+````
+
+- At start and whenever the note changes, its values are applied.
+- A plugin the note lists that isn't installed is installed from its release after one click (and a GitHub one is
+  added to BRAT, which keeps it updated).
+- A change you make in Settings is written into the note, dated; a setting set back to its default leaves the note.
+  Any other change (a synced file, another plugin) is put back.
+- A new device asks once whether to apply the note or take this vault's values into it.
+- No note yet? The command "Create the settings note from this vault" writes one.
+
+**And three editor behaviours** (each can be turned off):
+
+- Picking a note from `[[` inserts `[[path]]` without Obsidian's `|name` alias.
+- Heading and block links get the path from the vault root too, while links use absolute paths.
 - Date properties show and take `YYYY-MM-DD` (and `YYYY-MM-DD HH:mm:ss`) instead of the system's locale format.
 
-## Without Templater or Backlinks Full View
-
-Neither is needed:
-
-- **Without Templater**, core Templates is left alone. Templater's two hotkeys (Alt+N for "Create new note from
-  template", none for "Open insert template modal") are saved anyway and work once Templater is installed; until
-  then Alt+N does whatever else you bind to it, with no warning about a clash.
-- **Without Backlinks Full View**, core Backlinks is left alone.
-
-Everything else (links, attachments, trash, Bases, navigation hotkeys, dates) works the same with or without them.
+`SPEC.md` has the details: the block kinds, the rules, the limits.
 
 ## Install with BRAT
 

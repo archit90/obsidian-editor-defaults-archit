@@ -38,3 +38,78 @@ export const PICK_LINK = "_test/ed-z/Ed pick target";
 
 /** Property types (types.json) of the fixture notes' properties. */
 export const TYPES = { ed_created: "datetime", ed_due: "date", ed_org: "multitext", ed_src: "text" };
+
+/** The settings note the suite uses (its own path, so a copy of a real vault keeps its note): what the cases expect. */
+export const SETTINGS_NOTE = "_test/ed-settings.md";
+export const WANT = {
+  attachmentFolder: "u",
+  config: { newLinkFormat: "absolute", trashOption: "local" },
+  corePlugins: [
+    { id: "bases", name: "Bases", enabled: true },
+    { id: "templates", name: "Templates", enabled: false, onlyWith: { id: "templater-obsidian", name: "Templater" } },
+    { id: "zk-prefixer", name: "Unique note creator", enabled: false },
+    {
+      id: "backlink",
+      name: "Backlinks",
+      enabled: false,
+      onlyWith: { id: "backlinks-full-view", name: "Backlinks Full View" },
+    },
+  ],
+  hotkeys: [
+    {
+      command: "app:go-back",
+      keys: [
+        { modifiers: ["Mod", "Alt"], key: "ArrowLeft" },
+        { modifiers: ["Mod"], key: "[" },
+      ],
+    },
+    {
+      command: "app:go-forward",
+      keys: [
+        { modifiers: ["Mod", "Alt"], key: "ArrowRight" },
+        { modifiers: ["Mod"], key: "]" },
+      ],
+    },
+    { command: "templater-obsidian:create-new-note-from-template", keys: [{ modifiers: ["Alt"], key: "N" }] },
+    { command: "templater-obsidian:insert-templater", keys: [] },
+  ],
+};
+const hk = keys => `[${keys.map(k => JSON.stringify([...k.modifiers, k.key].join("+"))).join(", ")}]`;
+export const SETTINGS_TEXT = `# Vault settings
+
+The suite's settings note.
+
+## Obsidian
+
+\`\`\`vault-settings
+obsidian: app
+settings:
+  newLinkFormat: ${WANT.config.newLinkFormat}
+  attachmentFolderPath: ${WANT.attachmentFolder}
+  trashOption: ${WANT.config.trashOption}
+\`\`\`
+
+## Core plugins
+
+\`\`\`vault-settings
+obsidian: core-plugins
+settings:
+${WANT.corePlugins.map(r => (r.onlyWith ? `  ${r.id}: { enabled: ${r.enabled}, onlyWith: ${r.onlyWith.id} }` : `  ${r.id}: ${r.enabled}`)).join("\n")}
+\`\`\`
+
+## Hotkeys
+
+\`\`\`vault-settings
+obsidian: hotkeys
+settings:
+${WANT.hotkeys.map(h => `  ${h.command}: ${hk(h.keys)}`).join("\n")}
+\`\`\`
+
+## Editor Defaults (Archit)
+
+\`\`\`vault-settings
+plugin: editor-defaults-archit
+source: github:archit90/obsidian-editor-defaults-archit
+\`\`\`
+`;
+NOTES[SETTINGS_NOTE] = SETTINGS_TEXT;

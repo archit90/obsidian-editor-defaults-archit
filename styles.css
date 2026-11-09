@@ -13,3 +13,8 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* Settings tab: the vault setup status, one line per item */
+.editor-defaults-status {
+  white-space: pre-line;
+}

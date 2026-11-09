@@ -9,6 +9,8 @@ declare module "obsidian" {
       /** The hotkeys a command registered (used when it has no entry of its own). */
       getDefaultHotkeys?(commandId: string): Hotkey[] | undefined;
       setHotkeys?(commandId: string, keys: Hotkey[]): void;
+      /** The hotkeys set in hotkeys.json, by command id (a copy). */
+      customKeys?: Record<string, Hotkey[]>;
       /** Writes hotkeys.json (the Hotkeys tab calls it after each change). */
       save?(): Promise<void>;
     };
@@ -17,7 +19,15 @@ declare module "obsidian" {
         string,
         {
           enabled: boolean;
-          instance?: { id: string; name?: string };
+          instance?: {
+            id: string;
+            name?: string;
+            /** Whether Obsidian turns it on in a new vault. */
+            defaultOn?: boolean;
+            /** Its settings, from .obsidian/<id>.json. */
+            options?: unknown;
+            onExternalSettingsChange?(): Promise<void> | void;
+          };
           enable?(save: boolean): Promise<void>;
           disable?(save: boolean): Promise<void>;
         }
@@ -28,6 +38,19 @@ declare module "obsidian" {
     /** Community plugins: `plugins` holds the loaded (enabled) ones by id. */
     plugins?: {
       plugins?: Record<string, unknown>;
+      /** Installed plugins' manifests, by id (enabled or not). */
+      manifests?: Record<string, PluginManifest | undefined>;
+      /** Ids in community-plugins.json. */
+      enabledPlugins?: Set<string>;
+      /** Loads a plugin without changing community-plugins.json. */
+      enablePlugin?(id: string): Promise<boolean>;
+      disablePlugin?(id: string): Promise<void>;
+      enablePluginAndSave?(id: string): Promise<boolean>;
+      disablePluginAndSave?(id: string): Promise<void>;
+      /** Obsidian's installer: downloads the release `version` of `repo` and writes .obsidian/plugins/<id>/. */
+      installPlugin?(repo: string, version: string, manifest: PluginManifest): Promise<unknown>;
+      uninstallPlugin?(id: string): Promise<void>;
+      loadManifests?(): Promise<void>;
     };
     commands?: {
       /** Every registered command, by id. */
@@ -39,6 +62,7 @@ declare module "obsidian" {
     /** The Settings modal. */
     setting?: {
       isOpen?: boolean;
+      onClose?(): void;
       activeTab?: {
         /** "file" (Files and links), "plugins" (Core plugins), "hotkeys", or a plugin's id. */
         id?: string;
@@ -58,9 +82,14 @@ declare module "obsidian" {
       getAllProperties?(): Record<string, { name: string; widget?: string }>;
       /** "changed" with a lower-cased property name redraws that property in every open note and Base. */
       trigger?(name: "changed", key: string): void;
+      /** Sets a property's type (writes types.json). */
+      setType?(name: string, widget: string): Promise<void>;
+      unsetType?(name: string): Promise<void>;
     };
   }
   interface Vault {
+    /** app.json and appearance.json as Obsidian holds them (keys set; getConfig falls back to the defaults). */
+    config?: Record<string, unknown>;
     getConfig?(key: string): unknown;
     setConfig?(key: string, value: unknown): void;
     /** Fires with the key after setConfig, and when app.json changes on disk. */

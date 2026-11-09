@@ -1,18 +1,12 @@
 import { AbstractInputSuggest, Editor, EditorSuggest, Hotkey, Notice, Platform, Plugin, TFile } from "obsidian";
 import { around } from "monkey-around";
-import {
-  CONFIG_RULES,
-  ENFORCED,
-  HOTKEY_NAMES,
-  HOTKEYS,
-  hotkeyClashes,
-  sameHotkeys,
-  wantedCorePlugins,
-} from "./defaults";
-import { DriftGuard, ENFORCED_CONFIG, revertNotice, stoppedNotice } from "./drift";
+import { hotkeyClashes } from "./defaults";
+import { parseHotkey } from "./setup/hotkeys";
+import type { JsonObject } from "./setup/json";
+import { VaultSetup } from "./setup/setup";
 import { fixPickedLink, isLinkTrigger, PickFix } from "./links";
 import { IsoType, isoifyWidget } from "./properties";
-import { DEFAULTS, EditorDefaultsTab, parseSettings, SETTING_NAMES, Settings } from "./settings";
+import { DEFAULTS, EditorDefaultsTab, parseSettings, Settings } from "./settings";
 
 const logError = (what: string) => (e: unknown) => console.error(`[editor-defaults] ${what}`, e);
 
@@ -68,38 +62,15 @@ function isPropertyLinkSuggestProto(proto: unknown): proto is PropertyLinkSugges
   );
 }
 
-/** How long to wait after a vault setting, core plugin or hotkey changes before checking it. */
-const DRIFT_DELAY_MS = 300;
-
-/**
- * The Settings tabs that show values Editor Defaults puts back (Files and links, Core plugins, Hotkeys): redrawn
- * after a put-back so they don't show the undone value. Other tabs, other plugins' among them, are never redrawn.
- */
-const REDRAWN_TABS: ReadonlySet<string> = new Set(["file", "plugins", "hotkeys"]);
-
-/** One enforced default that was set: its id (config key, core plugin or command), what it is now, and the setting that keeps it. */
-interface Revert {
-  id: string;
-  what: string;
-  setting: keyof Settings;
-}
-
 export default class EditorDefaultsPlugin extends Plugin {
   override settings: Settings = { ...DEFAULTS };
-  /** Set on unload: whatever is still running (an enforce, the layout-ready callback) stops there. */
+  /** Set on unload: whatever is still running (the layout-ready callback) stops there. */
   private unloaded = false;
-  /** applyDefaults runs one at a time, in the order asked. */
-  private queue: Promise<unknown> = Promise.resolve();
-  private applying = false;
-  /** Something changed while a run was applying (sync, a person, or the run's own writes): check again after it. */
-  private dirty = false;
-  private driftTimer: number | null = null;
-  /** The check scheduled for when the guard lets a refused item be put back again. */
-  private recheckTimer: number | null = null;
-  private recheckAt = 0;
-  private guard = new DriftGuard();
   /** Hotkey clashes already warned about this session ("other command|hotkey"). */
   private warnedClashes = new Set<string>();
+  setup!: VaultSetup;
+  /** The settings note and on/off the setup last ran with: a change of either runs it again. */
+  private setupKey = "";
 
   override async onload() {
     // enabled while Obsidian runs: the open notes and Bases tabs already show Obsidian's own date fields
@@ -108,12 +79,28 @@ export default class EditorDefaultsPlugin extends Plugin {
     // at start, Obsidian loads plugins before it draws the workspace: every date field gets the patched widget
     this.patchDateWidgets();
     this.addSettingTab(new EditorDefaultsTab(this.app, this));
+    this.setup = new VaultSetup({
+      app: this.app,
+      manifest: this.manifest,
+      notePath: () => this.settings.setupNote,
+      enabled: () => this.settings.setupEnabled,
+      ownDefaults: () => ({ ...DEFAULTS }),
+      applyOwnSettings: all => this.applyOwnSettings(all),
+      commandName: id => this.commandName(id),
+      register: cb => this.register(cb),
+      registerEvent: ref => this.registerEvent(ref),
+      checked: key => {
+        if (key === "hotkeys") this.warnHotkeyClashes();
+      },
+    });
+    this.setupKey = this.currentSetupKey();
+    this.addCommands();
     this.app.workspace.onLayoutReady(() => {
       if (this.unloaded) return;
-      this.applyDefaults()
+      this.setup
+        .start()
         .then(() => this.warnHotkeyClashes())
-        .catch(logError("could not apply the defaults"));
-      this.watchDrift();
+        .catch(logError("could not set up the vault"));
       this.patchLinkSuggest();
       this.patchPropertyLinkSuggest();
       if (midSession && this.settings.isoDates) this.rerenderDateFields();
@@ -122,8 +109,7 @@ export default class EditorDefaultsPlugin extends Plugin {
 
   override onunload() {
     this.unloaded = true;
-    if (this.driftTimer !== null) window.clearTimeout(this.driftTimer);
-    if (this.recheckTimer !== null) window.clearTimeout(this.recheckTimer);
+    this.setup?.stop();
     // the date widgets are unpatched by now: open notes get Obsidian's own date fields back
     if (this.settings.isoDates) this.rerenderDateFields();
   }
@@ -133,19 +119,26 @@ export default class EditorDefaultsPlugin extends Plugin {
     if (this.unloaded) return;
     const before = this.settings;
     this.settings = parseSettings(await this.loadData());
-    // new settings: every item is enforced afresh, also one stopped for this session
-    this.guard = new DriftGuard();
-    await this.applyDefaults();
-    if (this.unloaded) return;
     if (before.isoDates !== this.settings.isoDates) this.rerenderDateFields();
-    const tab = this.openSettingsTab();
-    if (tab?.id === this.manifest.id) tab.display?.();
+    await this.runSetupIfMoved();
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
-    this.guard = new DriftGuard();
-    await this.applyDefaults();
+    await this.runSetupIfMoved();
+  }
+
+  private currentSetupKey() {
+    return `${this.settings.setupEnabled}|${this.settings.setupNote}`;
+  }
+
+  /** The settings note's path or the setup's on/off changed since it last ran: run it with them. */
+  private async runSetupIfMoved() {
+    const key = this.currentSetupKey();
+    if (key === this.setupKey) return;
+    this.setupKey = key;
+    this.setup.forgetNote();
+    await this.setup.run();
   }
 
   /** The "Dates in properties" setting changed: redraw the date fields of open notes and Bases. */
@@ -154,178 +147,99 @@ export default class EditorDefaultsPlugin extends Plugin {
     this.rerenderDateFields();
   }
 
-  /**
-   * Writes each enabled default into the vault config if it differs, except the items `skip` refuses (asked only
-   * for items that differ). Returns what was set. Runs one at a time, after any run already asked for. Saving the
-   * plugin's settings applies the defaults too, so turning a setting on applies it at once.
-   */
-  applyDefaults(skip: (id: string) => boolean = () => false): Promise<Revert[]> {
-    const run = this.queue.then(() => this.applyNow(skip));
-    this.queue = run.catch(() => undefined);
-    return run;
+  /** The settings note's block for this plugin: its settings, as data.json holds them. */
+  private async applyOwnSettings(all: JsonObject) {
+    // which note to read, and whether to, stay this device's (OWN_LOCAL)
+    const next = {
+      ...parseSettings(all),
+      setupNote: this.settings.setupNote,
+      setupEnabled: this.settings.setupEnabled,
+    };
+    const before = this.settings;
+    this.settings = next;
+    await this.saveData(next);
+    if (before.isoDates !== next.isoDates) this.rerenderDateFields();
   }
 
-  private async applyNow(skip: (id: string) => boolean): Promise<Revert[]> {
-    if (this.unloaded) return [];
-    const s = this.settings;
-    const out: Revert[] = [];
-    this.applying = true;
-    try {
-      const vault = this.app.vault;
-      if (typeof vault.getConfig === "function" && typeof vault.setConfig === "function")
-        for (const rule of CONFIG_RULES) {
-          const value = rule.value(s);
-          if (!s[rule.setting] || !value || vault.getConfig(rule.key) === value || skip(rule.key)) continue;
-          vault.setConfig(rule.key, value);
-          out.push({ id: rule.key, what: rule.what(value), setting: rule.setting });
-        }
-      if (s.forceCorePlugins)
-        for (const [id, what] of await this.applyCorePlugins(skip)) out.push({ id, what, setting: "forceCorePlugins" });
-      if (s.forceHotkeys)
-        for (const [id, what] of await this.applyHotkeys(skip)) out.push({ id, what, setting: "forceHotkeys" });
-    } finally {
-      this.applying = false;
-    }
-    if (this.dirty) {
-      this.dirty = false;
-      this.requestEnforce();
-    }
-    return out;
+  async createSetupNote() {
+    const f = await this.setup.createNote();
+    if (f) await this.app.workspace.getLeaf(true).openFile(f);
   }
 
-  /**
-   * "Enforces vault settings on every device, on load and whenever they drift": a change made by hand (Settings →
-   * Files and links, Core plugins, Hotkeys), by a synced app.json / hotkeys.json, or by another plugin is put
-   * back, with a notice that names the Editor Defaults (Archit) setting to turn off for changing it.
-   */
-  private watchDrift() {
-    this.registerEvent(
-      this.app.vault.on("config-changed", (key: string) => {
-        if (ENFORCED_CONFIG.has(key)) this.requestEnforce();
-      }),
-    );
-    const core = this.app.internalPlugins;
-    if (typeof core?.on === "function") this.registerEvent(core.on("change", () => this.requestEnforce()));
-    const hm = this.app.hotkeyManager;
-    const plugin = this;
-    // the Hotkeys tab saves after each change
-    if (hm && typeof hm.save === "function")
-      this.register(
-        around(hm, {
-          save: next =>
-            function (this: unknown, ...args: unknown[]) {
-              const saved: unknown = next ? Reflect.apply(next, this, args) : undefined;
-              void Promise.resolve(saved).then(
-                () => plugin.requestEnforce(),
-                () => undefined,
-              );
-              return saved instanceof Promise ? saved : Promise.resolve();
-            },
-        }),
-      );
-    // a hotkeys.json changed on disk (sync) is loaded again by Obsidian 50 ms later; the check comes after that
-    const hotkeysFile = `${this.app.vault.configDir}/hotkeys.json`;
-    this.registerEvent(
-      this.app.vault.on("raw", (path: string) => {
-        if (path === hotkeysFile) this.requestEnforce();
-      }),
-    );
+  async openSetupNote() {
+    const f = this.app.vault.getAbstractFileByPath(this.settings.setupNote);
+    if (f instanceof TFile) await this.app.workspace.getLeaf(true).openFile(f);
+    else new Notice(`Editor Defaults (Archit): there is no note at ${this.settings.setupNote}.`);
   }
 
-  private requestEnforce() {
-    if (this.unloaded) return;
-    if (this.applying) {
-      this.dirty = true;
-      return;
-    }
-    if (this.driftTimer !== null) window.clearTimeout(this.driftTimer);
-    this.driftTimer = window.setTimeout(() => {
-      this.driftTimer = null;
-      this.enforce().catch(logError("could not put the defaults back"));
-    }, DRIFT_DELAY_MS);
-  }
-
-  private async enforce() {
-    if (this.unloaded) return;
-    // something else that keeps setting one back (another plugin or device) would make the two fight forever
-    const refused = new Set<string>();
-    const reverted = await this.applyDefaults(id => {
-      if (this.guard.allow(id, Date.now())) return false;
-      refused.add(id);
-      return true;
+  private addCommands() {
+    this.addCommand({
+      id: "apply-settings-note",
+      name: "Apply the settings note now",
+      callback: () => void this.setup.run(true).then(() => this.warnHotkeyClashes()),
     });
-    if (this.unloaded) return;
-    const now = Date.now();
-    for (const r of reverted) this.guard.record(r.id, now);
-    this.scheduleRecheck(refused, now);
-    this.warnHotkeyClashes();
-    const stopped = this.guard.takeStopped();
-    if (stopped.length) new Notice(stoppedNotice(stopped.map(id => this.describe(id))), 15000);
-    if (!reverted.length) return;
-    new Notice(
-      revertNotice(
-        reverted.map(r => r.what),
-        reverted.map(r => SETTING_NAMES[r.setting]),
-      ),
-      8000,
-    );
-    // an open Settings tab that shows these values still shows the one just undone
-    const tab = this.openSettingsTab();
-    if (!tab || !REDRAWN_TABS.has(tab.id ?? "")) return;
-    // the Hotkeys tab redraws its list and keeps its filter; the others are drawn again where they were scrolled
-    if (typeof tab.onHotkeysChanged === "function") tab.onHotkeysChanged();
-    else if (typeof tab.display === "function") {
-      const top = tab.containerEl?.scrollTop ?? 0;
-      tab.display();
-      if (tab.containerEl) tab.containerEl.scrollTop = top;
-    }
+    this.addCommand({
+      id: "show-differences",
+      name: "Show what differs from the settings note",
+      callback: () =>
+        void this.setup.plan().then(p => {
+          const lines = [
+            ...p.install.map(b => `install ${b.id}`),
+            ...p.uninstall.map(b => `remove ${b.id}`),
+            ...p.differences,
+          ];
+          new Notice(
+            lines.length
+              ? `Editor Defaults (Archit): the vault differs from the settings note in:\n${lines.join("\n")}`
+              : "Editor Defaults (Archit): the vault matches the settings note.",
+            lines.length ? 15000 : 4000,
+          );
+        }),
+    });
+    this.addCommand({
+      id: "create-settings-note",
+      name: "Create the settings note from this vault",
+      callback: () => void this.createSetupNote(),
+    });
+    this.addCommand({
+      id: "update-settings-note",
+      name: "Update the settings note from this vault",
+      callback: () =>
+        void this.setup
+          .updateNoteFromVault()
+          .then(() => new Notice("Editor Defaults (Archit) updated the settings note.")),
+    });
+    this.addCommand({
+      id: "open-settings-note",
+      name: "Open the settings note",
+      callback: () => void this.openSetupNote(),
+    });
   }
 
-  private openSettingsTab() {
-    return this.app.setting?.isOpen ? (this.app.setting.activeTab ?? null) : null;
-  }
-
-  /** An item the guard refused is checked again once its window has passed, even if nothing else changes by then. */
-  private scheduleRecheck(refused: ReadonlySet<string>, now: number) {
-    const at = Math.min(...[...refused].map(id => this.guard.retryAt(id, now) ?? Infinity));
-    if (!Number.isFinite(at) || (this.recheckTimer !== null && this.recheckAt <= at)) return;
-    if (this.recheckTimer !== null) window.clearTimeout(this.recheckTimer);
-    this.recheckAt = at;
-    this.recheckTimer = window.setTimeout(
-      () => {
-        this.recheckTimer = null;
-        this.requestEnforce();
-      },
-      Math.max(0, at - now) + 50,
-    );
-  }
-
-  /** An enforced item (config key, core plugin or command) as a notice names it. */
-  private describe(id: string): string {
-    const rule = CONFIG_RULES.find(r => r.key === id);
-    if (rule) return rule.what(rule.value(this.settings));
-    const core = ENFORCED.corePlugins.find(r => r.id === id);
-    return core ? `core plugin ${core.name}` : `the hotkeys of "${this.commandName(id)}"`;
-  }
-
-  /** A command's name: its own, or the one in defaults.json while its plugin isn't loaded. */
+  /** A command's name, or its id while its plugin isn't loaded. */
   private commandName(id: string): string {
-    return this.app.commands?.findCommand?.(id)?.name ?? HOTKEY_NAMES[id] ?? id;
+    return this.app.commands?.findCommand?.(id)?.name ?? id;
   }
 
   /**
-   * Warns (once per clash per session) when another command has one of the hotkeys set here (Alt+N, Navigate
-   * back / forward): Obsidian runs only one of them. The other command's hotkey is left alone. A hotkey whose
-   * command doesn't exist (Templater not installed) clashes with nothing.
+   * Warns (once per clash per session) when another command has one of the hotkeys the settings note sets: Obsidian
+   * runs only one of them. The other command's hotkey is left alone. A hotkey whose command doesn't exist (its
+   * plugin isn't installed) clashes with nothing.
    */
   private warnHotkeyClashes() {
     const hm = this.app.hotkeyManager;
-    if (this.unloaded || !this.settings.forceHotkeys || !hm) return;
+    if (this.unloaded || !hm) return;
+    const wanted: Record<string, Hotkey[]> = {};
+    for (const [id, keys] of Object.entries(this.setup.noteHotkeys()))
+      wanted[id] = keys.flatMap(k => {
+        const h = parseHotkey(k);
+        return h ? [h] : [];
+      });
     // editor commands are only in `commands` while an editor has focus; `editorCommands` always has them
     const commands = { ...this.app.commands?.editorCommands, ...this.app.commands?.commands };
     const effective: Record<string, Hotkey[]> = {};
     for (const id of Object.keys(commands)) effective[id] = hm.getHotkeys?.(id) ?? hm.getDefaultHotkeys?.(id) ?? [];
-    for (const c of hotkeyClashes(effective, Platform.isMacOS || Platform.isIosApp)) {
+    for (const c of hotkeyClashes(wanted, effective, Platform.isMacOS || Platform.isIosApp)) {
       const key = `${c.other}|${c.label}`;
       if (this.warnedClashes.has(key)) continue;
       this.warnedClashes.add(key);
@@ -336,55 +250,6 @@ export default class EditorDefaultsPlugin extends Plugin {
         10000,
       );
     }
-  }
-
-  /** Sets each command in HOTKEYS to exactly its listed hotkeys (written to .obsidian/hotkeys.json). */
-  private async applyHotkeys(skip: (id: string) => boolean): Promise<[string, string][]> {
-    const hm = this.app.hotkeyManager;
-    if (typeof hm?.setHotkeys !== "function" || typeof hm.getHotkeys !== "function") return [];
-    const changed: [string, string][] = [];
-    for (const [id, keys] of Object.entries(HOTKEYS)) {
-      const now = hm.getHotkeys(id);
-      // no entry at all means the command's default hotkeys (Templater's own, say): write the list explicitly
-      if ((now !== undefined && sameHotkeys(now, keys)) || skip(id)) continue;
-      hm.setHotkeys(
-        id,
-        keys.map(k => ({ modifiers: [...k.modifiers], key: k.key })),
-      );
-      changed.push([id, `the hotkeys of "${this.commandName(id)}"`]);
-    }
-    if (changed.length) {
-      try {
-        await hm.save?.();
-      } catch (e) {
-        console.error("[editor-defaults] could not save hotkeys", e);
-      }
-    }
-    return changed;
-  }
-
-  /** Whether a community plugin is loaded (installed and enabled). */
-  private isPluginLoaded(id: string): boolean {
-    return !!this.app.plugins?.plugins?.[id];
-  }
-
-  /** Turns the core plugins on or off as the rules say for the plugins loaded now (wantedCorePlugins). */
-  private async applyCorePlugins(skip: (id: string) => boolean): Promise<[string, string][]> {
-    const plugins = this.app.internalPlugins?.plugins;
-    if (!plugins) return [];
-    const changed: [string, string][] = [];
-    for (const [id, want] of Object.entries(wantedCorePlugins(p => this.isPluginLoaded(p)))) {
-      const p = plugins[id];
-      const turn = want ? p?.enable : p?.disable;
-      if (!p || p.enabled === want || typeof turn !== "function" || skip(id)) continue;
-      try {
-        await turn.call(p, true);
-        changed.push([id, `core plugin ${p.instance?.name ?? id} ${want ? "on" : "off"}`]);
-      } catch (e) {
-        console.error(`[editor-defaults] could not turn core plugin ${id} ${want ? "on" : "off"}`, e);
-      }
-    }
-    return changed;
   }
 
   /**
