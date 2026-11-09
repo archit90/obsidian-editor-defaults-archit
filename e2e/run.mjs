@@ -1244,7 +1244,7 @@ T(
   "S6",
   "No settings note: the status says so; 'Create from this vault' writes one with what differs from the defaults",
   async () => {
-    const other = "_test/ed-made-settings.md";
+    const other = "ed-made-settings.md"; // at the vault root, as the default note is
     const r = await ev(
       `const ed=${P}; ed.settings.setupNote=${JSON.stringify(other)}; await ed.saveSettings(); await E.sleep(300); const st=ed.setup.status.note; await ed.setup.createNote(); await E.sleep(800); const f=app.vault.getAbstractFileByPath(${JSON.stringify(other)}); const text=f? await app.vault.read(f) : ""; if (f) await app.vault.delete(f); return {st, text, modal: !!document.querySelector(".modal")}`,
     );

@@ -13,7 +13,7 @@ Two parts: the **vault setup**, which keeps the vault's plugins and settings in 
 
 ### The vault setup
 
-The settings note (`_s/Vault settings.md` by default; the "Settings note" setting) says which plugins the vault has,
+The settings note (`Vault settings.md` at the vault root by default; the "Settings note" setting) says which plugins the vault has,
 where each comes from, whether it's on, and every setting that differs from its default: Obsidian's, the core
 plugins', the hotkeys, the property types, a core plugin's config file and each plugin's. Prose explains why;
 fenced `vault-settings` blocks hold the values.
@@ -120,13 +120,13 @@ a change is taken in), dated lines right below it, and new sections at the end.
 
 ## Settings
 
-| Setting                                                  | Effect                                                                                                     |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Insert `[[path]]` without alias                          | The first behaviour above. On by default.                                                                  |
-| Heading and block links use the path from the vault root | The second. On by default.                                                                                 |
-| Dates in properties as YYYY-MM-DD                        | The third. On by default.                                                                                  |
-| Set up the vault from the settings note                  | The vault setup. On by default; off, nothing is applied or taken in.                                       |
-| Settings note                                            | The note's path (`_s/Vault settings.md`), applied when you leave the field. Per device: never in the note. |
+| Setting                                                  | Effect                                                                                                                                                                                                                 |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Insert `[[path]]` without alias                          | The first behaviour above. On by default.                                                                                                                                                                              |
+| Heading and block links use the path from the vault root | The second. On by default.                                                                                                                                                                                             |
+| Dates in properties as YYYY-MM-DD                        | The third. On by default.                                                                                                                                                                                              |
+| Set up the vault from the settings note                  | The vault setup. On by default; off, nothing is applied or taken in.                                                                                                                                                   |
+| Settings note                                            | The note's path (`Vault settings.md`, at the vault root), applied when you leave the field. Per device: never in the note. 0.1.2's default `_s/Vault settings.md`, saved in a `data.json`, is read as the new default. |
 
 Below them, **Status** says whether the vault matches the note (or what differs), what would be installed or
 removed, and which blocks aren't used, with "Apply now" and "Open the note" (or "Create from this vault" when there is

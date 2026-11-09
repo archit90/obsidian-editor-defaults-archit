@@ -6,7 +6,7 @@
 
 It does two things.
 
-**It sets up the vault from a settings note** (`_s/Vault settings.md`): which plugins the vault has, where each comes
+**It sets up the vault from a settings note** (`Vault settings.md` at the vault root): which plugins the vault has, where each comes
 from, whether it's on, and every setting that differs from its default (Obsidian's, the core plugins', the hotkeys,
 the property types and each plugin's), with the reasons written around them. The values are in fenced blocks:
 

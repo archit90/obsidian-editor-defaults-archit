@@ -9,7 +9,9 @@ export interface Settings {
   setupNote: string; // the settings note's path
 }
 
-export const DEFAULT_NOTE = "_s/Vault settings.md";
+export const DEFAULT_NOTE = "Vault settings.md";
+/** 0.1.2's default, in a system folder: a data.json that saved it moves to the vault root with the default. */
+const OLD_DEFAULT_NOTE = "_s/Vault settings.md";
 
 export const DEFAULTS: Settings = {
   forceRootPaths: true,
@@ -42,7 +44,8 @@ export function parseSettings(raw: unknown): Settings {
     if (typeof v === "boolean") out[key] = v;
   }
   const note = get("setupNote");
-  if (typeof note === "string" && note.trim().endsWith(".md")) out.setupNote = note.trim();
+  if (typeof note === "string" && note.trim().endsWith(".md") && note.trim() !== OLD_DEFAULT_NOTE)
+    out.setupNote = note.trim();
   return out;
 }
 

@@ -1,4 +1,4 @@
-// The vault setup: the settings note (`_s/Vault settings.md`) applied to the vault, and the vault's changes taken
+// The vault setup: the settings note (`Vault settings.md` at the vault root) applied to the vault, and the vault's changes taken
 // back into it. See SPEC.md, "Vault setup". The rules:
 // - the note wins: at start and whenever the note changes, its values are applied;
 // - a change made in Obsidian's Settings window (or a property type set from a note) is written into the note;
@@ -954,7 +954,7 @@ export class VaultSetup {
       "blocks and writes changes made in Settings back into them; the text around them is yours.\n\n" +
       sections.join("\n");
     const path = this.host.notePath();
-    const dir = path.slice(0, path.lastIndexOf("/"));
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
     if (dir && !this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
     const f = await this.app.vault.create(path, text);
     this.app.saveLocalStorage(FIRST_RUN_KEY, true);
